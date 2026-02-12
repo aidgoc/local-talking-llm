@@ -22,6 +22,14 @@ from rich.markdown import Markdown
 from ltl.core.config import load_config
 from ltl.commands.chat import TextChatAssistant
 
+# Optional TTS import
+try:
+    from tts import TextToSpeechService
+
+    TTS_AVAILABLE = True
+except ImportError:
+    TTS_AVAILABLE = False
+
 
 class LTLTUI:
     """Unified Terminal User Interface for LTL."""
@@ -32,11 +40,15 @@ class LTLTUI:
         self.chat_assistant = TextChatAssistant(self.config)
         self.running = False
         self.voice_enabled = False
+        self.tts_enabled = False
         self.current_mode = "chat"
         self.chat_history: List[str] = []
 
         # Check for voice components
         self.voice_enabled = self._check_voice_components()
+        self.tts_enabled = self._check_tts_components()
+
+        # TTS will be initialized on-demand using subprocess
 
     def _check_voice_components(self) -> bool:
         """Check if voice components are available."""
@@ -62,6 +74,55 @@ class LTLTUI:
             return False
         except Exception:
             return False
+
+    def _check_tts_components(self) -> bool:
+        """Check if TTS components are available."""
+        try:
+            # Check if voice model exists
+            voice_path = os.path.expanduser("~/.local/share/piper/en_US-lessac-medium.onnx")
+            if not os.path.exists(voice_path):
+                return False
+
+            # Try to test TTS in venv
+            import subprocess
+
+            venv_python = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                ".venv311",
+                "bin",
+                "python3",
+            )
+
+            if os.path.exists(venv_python):
+                result = subprocess.run(
+                    [
+                        venv_python,
+                        "-c",
+                        """
+import sys
+sys.path.insert(0, '.')
+try:
+    from tts import TextToSpeechService
+    tts = TextToSpeechService()
+    sample_rate, audio = tts.synthesize('test')
+    print('OK' if len(audio) > 0 else 'FAIL')
+except Exception as e:
+    print(f'ERROR: {e}')
+""",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    cwd=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                )
+                return result.returncode == 0 and "OK" in result.stdout
+
+            return False
+        except Exception as e:
+            print(f"TTS check failed: {e}")
+            return False
+        except Exception:
+            return False
         except Exception:
             return False
 
@@ -71,7 +132,8 @@ class LTLTUI:
         title_panel = Panel(
             "🎙️ Welcome to LTL - Local Talking LLM\n\n"
             "Your privacy-first AI assistant with voice, vision, and tools.\n\n"
-            f"Voice: {'✅ Enabled' if self.voice_enabled else '❌ Disabled'}\n"
+            f"Voice Input: {'✅ Enabled' if self.voice_enabled else '❌ Disabled'}\n"
+            f"Voice Output: {'✅ Enabled' if self.tts_enabled else '❌ Disabled'}\n"
             f"Ollama: {'✅ Connected' if self._check_ollama() else '❌ Not connected'}\n"
             f"Channels: {self._get_channel_status()}\n\n"
             "Commands:\n"
@@ -276,6 +338,81 @@ else:
         # Display response
         response_panel = Panel(response, title="🤖 LTL", border_style="green")
         self.console.print(response_panel)
+
+        # Voice output if available
+        if self.tts_enabled:
+            try:
+                with self.console.status("[magenta]Speaking...", spinner="dots"):
+                    self._speak_text(response)
+            except Exception as e:
+                self.console.print(f"[yellow]Voice output failed: {e}[/yellow]")
+
+    def _speak_text(self, text: str):
+        """Speak text using TTS in venv."""
+        try:
+            import subprocess
+            import tempfile
+            import os
+
+            # Create TTS script
+            tts_script = f'''
+import sys
+sys.path.insert(0, '.')
+from tts import TextToSpeechService
+import sounddevice as sd
+
+tts = TextToSpeechService()
+sample_rate, audio = tts.long_form_synthesize("""{text.replace('"', '\\"')}""")
+sd.play(audio, sample_rate)
+sd.wait()
+print("TTS_COMPLETE")
+'''
+
+            # Write script to temp file
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+                f.write(tts_script)
+                script_path = f.name
+
+            try:
+                # Run TTS in venv
+                venv_python = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                    ".venv311",
+                    "bin",
+                    "python3",
+                )
+                result = subprocess.run(
+                    [venv_python, script_path],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    cwd=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                )
+
+                if result.returncode != 0:
+                    raise Exception(f"TTS failed: {result.stderr}")
+
+            finally:
+                # Clean up temp file
+                try:
+                    os.unlink(script_path)
+                except:
+                    pass
+
+        except Exception as e:
+            raise Exception(f"Voice output failed: {e}")
+
+    def _play_audio(self, sample_rate: int, audio_array):
+        """Play audio using sounddevice."""
+        try:
+            import sounddevice as sd
+
+            sd.play(audio_array, sample_rate)
+            sd.wait()
+        except ImportError:
+            self.console.print("[yellow]Audio playback not available[/yellow]")
+        except Exception as e:
+            self.console.print(f"[yellow]Audio playback failed: {e}[/yellow]")
 
     def show_tools(self):
         """Show available tools."""
