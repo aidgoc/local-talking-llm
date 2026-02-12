@@ -8,6 +8,8 @@
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey.svg)]()
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 
+**📚 [Complete User Guide →](USER_GUIDE.md)**
+
 ---
 
 ## ✨ Features
@@ -93,6 +95,41 @@ python app_optimized.py --backend openrouter --openrouter-key YOUR_KEY
 # See all options
 python app_optimized.py --help
 ```
+
+---
+
+## 🎮 LTL CLI (New!)
+
+LTL now includes a powerful command-line interface for advanced users:
+
+```bash
+# Initialize workspace
+python3 -m ltl init
+
+# Check system status
+python3 -m ltl status
+
+# Execute tools directly
+python3 -m ltl tool web_search query="python tutorial"
+python3 -m ltl tool list_dir path="."
+python3 -m ltl tool execute_command command="ls -la"
+
+# Manage configuration
+python3 -m ltl config show
+python3 -m ltl config edit
+
+# Setup local services
+python3 -m ltl setup localai    # Enhanced local LLM
+python3 -m ltl setup whisper    # Voice transcription
+
+# Start multi-channel gateway
+python3 -m ltl gateway          # Telegram + Discord bots
+
+# See all commands
+python3 -m ltl --help
+```
+
+**📚 Complete CLI documentation in [USER_GUIDE.md](USER_GUIDE.md)**
 
 ---
 
