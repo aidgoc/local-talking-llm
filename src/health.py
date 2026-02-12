@@ -61,7 +61,9 @@ def check_ollama(base_url: str, text_model: str, vision_model: str | None = None
         if vision_model in available:
             results.append(CheckResult(f"Model '{vision_model}'", "pass", "Available"))
         else:
-            results.append(CheckResult(f"Model '{vision_model}'", "warn", f"Not pulled. Run: ollama pull {vision_model}"))
+            results.append(
+                CheckResult(f"Model '{vision_model}'", "warn", f"Not pulled. Run: ollama pull {vision_model}")
+            )
 
     return results
 
@@ -70,12 +72,20 @@ def check_audio_devices() -> CheckResult:
     """Check that an audio input device is available."""
     try:
         devices = sd.query_devices()
-        has_input = any(d.get("max_input_channels", 0) > 0 for d in devices) if isinstance(devices, list) else devices.get("max_input_channels", 0) > 0
+        # Handle different return types from sounddevice (list, DeviceList, dict)
+        if isinstance(devices, dict):
+            # Single device returned as dict
+            has_input = devices.get("max_input_channels", 0) > 0
+        else:
+            # List, DeviceList, or other iterable - convert to list
+            device_list = list(devices) if not isinstance(devices, list) else devices
+            has_input = any(d.get("max_input_channels", 0) > 0 for d in device_list if isinstance(d, dict))
+
         if has_input:
             return CheckResult("Audio input", "pass", "Microphone available")
-        return CheckResult("Audio input", "fail", "No input device found")
+        return CheckResult("Audio input", "warn", "No input device found (will use text mode)")
     except Exception as e:
-        return CheckResult("Audio input", "fail", f"Error: {e}")
+        return CheckResult("Audio input", "warn", f"Audio check failed: {e}")
 
 
 def check_piper_voice(voice_path: str) -> CheckResult:
@@ -105,8 +115,8 @@ def run_health_checks(config: dict) -> HealthReport:
     report.checks.append(check_audio_devices())
 
     # Piper voice
-    voice_path = config.get("tts", {}).get("piper", {}).get(
-        "voice_path", "~/.local/share/piper/en_US-lessac-medium.onnx"
+    voice_path = (
+        config.get("tts", {}).get("piper", {}).get("voice_path", "~/.local/share/piper/en_US-lessac-medium.onnx")
     )
     report.checks.append(check_piper_voice(voice_path))
 
