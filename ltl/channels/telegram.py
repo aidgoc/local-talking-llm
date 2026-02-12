@@ -34,6 +34,10 @@ class TelegramChannel(Channel):
             print("❌ python-telegram-bot not installed. Install with: pip install python-telegram-bot")
             return
 
+        # Store imports for use in methods
+        self.Update = Update
+        self.ContextTypes = ContextTypes
+
         if not self.token:
             print("❌ Telegram bot token not configured")
             return
@@ -66,7 +70,7 @@ class TelegramChannel(Channel):
     def _run_polling(self):
         """Run the polling loop."""
         try:
-            self.application.run_polling(allowed_updates=Update.ALL_TYPES)
+            self.application.run_polling(allowed_updates=self.Update.ALL_TYPES)
         except Exception as e:
             print(f"❌ Telegram polling error: {e}")
             self.running = False
@@ -89,7 +93,7 @@ class TelegramChannel(Channel):
         except Exception as e:
             print(f"❌ Failed to send Telegram message: {e}")
 
-    async def _handle_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def _handle_start(self, update, context):
         """Handle /start command."""
         user = update.effective_user
         chat_id = str(update.effective_chat.id)
@@ -102,7 +106,7 @@ class TelegramChannel(Channel):
         else:
             await update.message.reply_text("Sorry, you're not authorized to use this bot.")
 
-    async def _handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def _handle_message(self, update, context):
         """Handle incoming messages."""
         user = update.effective_user
         chat_id = str(update.effective_chat.id)

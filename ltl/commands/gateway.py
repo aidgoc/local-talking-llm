@@ -121,7 +121,9 @@ def process_messages():
             response = f"Hello! I received your message: '{msg.content[:100]}...'"
 
             # Send response back to channel
-            outbound_msg = bus.OutboundMessage(channel=msg.channel, chat_id=msg.chat_id, content=response)
+            outbound_msg = bus.OutboundMessage(
+                channel=msg.channel, chat_id=msg.chat_id, content=response, timestamp=time.time()
+            )
             bus.publish_outbound(outbound_msg)
 
         except Exception as e:
