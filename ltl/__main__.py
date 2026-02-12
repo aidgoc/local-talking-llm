@@ -11,7 +11,7 @@ import os
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ltl.commands import init, status, chat, cron, config_cmd, tool, gateway
+from ltl.commands import init, status, chat, cron, config_cmd, tool, gateway, setup
 from ltl.core.workspace import get_workspace_path
 from ltl.core.config import load_config
 
@@ -77,6 +77,11 @@ Examples:
     # Gateway command
     gateway_parser = subparsers.add_parser("gateway", help="Start the message gateway for channels")
     gateway_parser.set_defaults(func=gateway.run)
+
+    # Setup command
+    setup_parser = subparsers.add_parser("setup", help="Set up local services (LocalAI, Whisper, etc.)")
+    setup_parser.add_argument("setup_command", nargs="?", help="Setup command (localai, whisper)")
+    setup_parser.set_defaults(func=setup.run)
 
     # Config command
     config_parser = subparsers.add_parser("config", help="Manage configuration")

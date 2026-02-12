@@ -58,6 +58,7 @@ def get_default_config():
         },
         "providers": {
             "ollama": {"base_url": "http://localhost:11434", "text_model": "gemma3", "vision_model": "moondream"},
+            "localai": {"enabled": False, "base_url": "http://localhost:8080"},
             "openrouter": {"api_key": "", "api_base": "https://openrouter.ai/api/v1"},
             "anthropic": {"api_key": "", "api_base": ""},
             "openai": {"api_key": "", "api_base": ""},
