@@ -61,9 +61,27 @@ The module now has better error handling:
 2. Multiple resampling methods if one fails
 3. Clear error messages for troubleshooting
 
+## Recording Fix Applied
+
+In addition to the TTS playback fix, we also fixed the recording issue:
+
+### The Recording Problem
+- Voice recording was hardcoded to 16000 Hz
+- Your audio device only supports 44100 Hz input
+- This caused the same "paInvalidSampleRate" errors during recording
+
+### The Recording Solution
+- **Automatic sample rate detection**: Detect input device's native rate (44100 Hz)
+- **Dynamic resampling**: Resample from device rate (44100 Hz) to 16000 Hz for Whisper
+- **Same robust resampling**: Uses the same multi-method approach as TTS
+
+### Fixed Components
+- `ltl/commands/tui.py`: Voice recording in TUI interface
+- `/speak` and `/record` commands in the LTL CLI
+
 ## Future Improvements
 
-For even better TTS performance, consider:
+For even better audio performance, consider:
 
 1. Installing resampy for higher quality resampling:
    ```bash
