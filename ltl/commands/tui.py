@@ -276,12 +276,20 @@ if recording:
     # Resample to 16kHz for Whisper if needed
     if samplerate != 16000:
         print(f"Resampling from {samplerate} Hz to 16000 Hz for Whisper...", flush=True)
-        from scipy.signal import resample_poly
-        from math import gcd
-        factor = gcd(samplerate, 16000)
-        up = 16000 // factor
-        down = samplerate // factor
-        audio = resample_poly(audio, up, down).astype(np.float32)
+        try:
+            from scipy.signal import resample_poly
+            from math import gcd
+            factor = gcd(samplerate, 16000)
+            up = 16000 // factor
+            down = samplerate // factor
+            audio = resample_poly(audio, up, down).astype(np.float32)
+        except ImportError:
+            # Fallback: simple linear interpolation if scipy not available
+            print("scipy not available, using simple resampling...", flush=True)
+            length_ratio = 16000 / samplerate
+            new_length = int(len(audio) * length_ratio)
+            indices = np.arange(new_length) / length_ratio
+            audio = np.interp(indices, np.arange(len(audio)), audio).astype(np.float32)
 
     # Load and use whisper
     print("Transcribing...", flush=True)
