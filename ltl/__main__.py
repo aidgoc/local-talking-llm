@@ -11,7 +11,7 @@ import os
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ltl.commands import init, status, chat, cron, config_cmd, tool
+from ltl.commands import init, status, chat, cron, config_cmd, tool, gateway
 from ltl.core.workspace import get_workspace_path
 from ltl.core.config import load_config
 
@@ -73,6 +73,10 @@ Examples:
     tool_parser.add_argument("tool_args", nargs="*", help="Tool arguments (key=value pairs)")
     tool_parser.add_argument("--tool-name", help="Tool name for help command")
     tool_parser.set_defaults(func=tool.run)
+
+    # Gateway command
+    gateway_parser = subparsers.add_parser("gateway", help="Start the message gateway for channels")
+    gateway_parser.set_defaults(func=gateway.run)
 
     # Config command
     config_parser = subparsers.add_parser("config", help="Manage configuration")

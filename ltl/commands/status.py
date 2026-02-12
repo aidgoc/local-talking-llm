@@ -72,7 +72,24 @@ def run(args):
                 print(f"  ✓ {name}: Configured")
             else:
                 print(f"  ✗ {name}: Not set")
-    except:
-        pass
+
+        # Channel status
+        channels = cfg.get("channels", {})
+        print("\nChannels:")
+        channel_status = [
+            ("Telegram", channels.get("telegram", {}).get("enabled"), channels.get("telegram", {}).get("token")),
+            ("Discord", channels.get("discord", {}).get("enabled"), channels.get("discord", {}).get("token")),
+        ]
+
+        for name, enabled, token in channel_status:
+            if enabled and token:
+                print(f"  ✓ {name}: Configured")
+            elif enabled:
+                print(f"  ⚠️ {name}: Enabled but no token")
+            else:
+                print(f"  ✗ {name}: Disabled")
+
+    except Exception as e:
+        print(f"  ⚠️ Error checking status: {e}")
 
     print("\n" + "=" * 60)
