@@ -11,7 +11,8 @@ import os
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ltl.commands import init, status, chat, cron, config_cmd, tool, gateway, setup
+from ltl.commands import init, status, chat, cron, tool, gateway, setup
+import ltl.commands.config_wizard as config_wizard
 from ltl.core.workspace import get_workspace_path
 from ltl.core.config import load_config
 
@@ -83,15 +84,8 @@ Examples:
     setup_parser.add_argument("setup_command", nargs="?", help="Setup command (localai, whisper)")
     setup_parser.set_defaults(func=setup.run)
 
-    # Config command
-    config_parser = subparsers.add_parser("config", help="Manage configuration")
-    config_subparsers = config_parser.add_subparsers(dest="config_command", help="Config subcommands")
-
-    config_show = config_subparsers.add_parser("show", help="Show current configuration")
-    config_show.set_defaults(func=config_cmd.show)
-
-    config_edit = config_subparsers.add_parser("edit", help="Edit configuration")
-    config_edit.set_defaults(func=config_cmd.edit)
+    # Config command (enhanced with wizard)
+    config_wizard.add_config_subparser(subparsers)
 
     # Parse args
     args = parser.parse_args()
