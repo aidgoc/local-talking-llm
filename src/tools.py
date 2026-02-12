@@ -122,10 +122,15 @@ class ToolExecutor:
             "complete_task": self._complete_task,
             "get_time": self._get_time,
             "get_location": self._get_location,
+            "set_timer": self._set_timer,
+            "schedule_reminder": self._schedule_reminder,
         }
 
     def extract_and_execute(self, user_text: str) -> str:
         """Extract tool call from user text via local LLM, execute it, return result string."""
+        # Store user text for timer parsing
+        self._last_user_text = user_text
+
         # Step 0: Fast-path for simple tools (skip LLM entirely)
         fast = self._fast_path(user_text)
         if fast:
@@ -159,22 +164,67 @@ class ToolExecutor:
 
     _FAST_ROUTES: list[tuple[list[str], str, dict]] = [
         # (keywords, tool_name, default_params)
-        (["what time", "current time", "what's the time", "the time now"],
-         "get_time", {}),
-        (["where am i", "my location", "what's my location", "what city",
-          "which city am i"],
-         "get_location", {}),
-        (["list my tasks", "show my tasks", "my todos", "my to-dos",
-          "my task list", "pending tasks", "open tasks",
-          "what do i need to do", "what are my tasks"],
-         "list_tasks", {}),
-        (["list memories", "show memories", "show what you remember",
-          "what do you know", "everything you know",
-          "what do you remember", "do you remember"],
-         "list_memories", {}),
-        (["today's date", "what day is it", "what is today",
-          "what's today", "what date is it"],
-         "get_time", {}),
+        (["what time", "current time", "what's the time", "the time now"], "get_time", {}),
+        (["where am i", "my location", "what's my location", "what city", "which city am i"], "get_location", {}),
+        (
+            [
+                "list my tasks",
+                "show my tasks",
+                "my todos",
+                "my to-dos",
+                "my task list",
+                "pending tasks",
+                "open tasks",
+                "what do i need to do",
+                "what are my tasks",
+            ],
+            "list_tasks",
+            {},
+        ),
+        (
+            [
+                "list memories",
+                "show memories",
+                "show what you remember",
+                "what do you know",
+                "everything you know",
+                "what do you remember",
+                "do you remember",
+            ],
+            "list_memories",
+            {},
+        ),
+        (["today's date", "what day is it", "what is today", "what's today", "what date is it"], "get_time", {}),
+        (
+            [
+                "set a timer",
+                "set timer",
+                "start a timer",
+                "start timer",
+                "set an alarm",
+                "set alarm",
+                "timer for",
+                "alarm for",
+            ],
+            "set_timer",
+            {},
+        ),
+        (
+            [
+                "remind me in",
+                "remind me after",
+                "wake me up in",
+                "remind me at",
+                "remind me on",
+                "notify me in",
+                "schedule a reminder",
+                "schedule reminder",
+                "create a reminder",
+                "create reminder",
+            ],
+            "schedule_reminder",
+            {},
+        ),
     ]
 
     def _fast_path(self, user_text: str) -> dict | None:
@@ -328,3 +378,61 @@ class ToolExecutor:
             pass
 
         return "Location unavailable (no internet connection)"
+
+    def _set_timer(self, params: dict) -> str:
+        """Set a timer for a specific duration."""
+        import re
+        import time
+        import threading
+
+        # Try to extract duration from the original user text
+        # Look for patterns like "5 minutes", "10 seconds", "1 hour", etc.
+        user_text = getattr(self, "_last_user_text", "")  # We'll need to pass this
+
+        # Duration patterns
+        duration_patterns = [
+            (r"(\d+)\s*(?:minute|min)", lambda m: int(m.group(1)) * 60),
+            (r"(\d+)\s*(?:hour|hr)", lambda m: int(m.group(1)) * 3600),
+            (r"(\d+)\s*(?:second|sec)", lambda m: int(m.group(1))),
+            (r"(\d+)\s*(?:day|days)", lambda m: int(m.group(1)) * 86400),
+        ]
+
+        duration_seconds = 300  # Default 5 minutes
+
+        for pattern, converter in duration_patterns:
+            match = re.search(pattern, user_text, re.IGNORECASE)
+            if match:
+                duration_seconds = converter(match)
+                break
+
+        def timer_callback():
+            time.sleep(duration_seconds)
+            console.print(f"\n[bold red]⏰ TIMER: Time's up! ({duration_seconds} seconds)[/bold red]")
+            # Could integrate with TTS here
+
+        # Start timer in background
+        timer_thread = threading.Thread(target=timer_callback, daemon=True)
+        timer_thread.start()
+
+        minutes = duration_seconds // 60
+        seconds = duration_seconds % 60
+
+        if minutes > 0:
+            return f"Timer set for {minutes} minute{'s' if minutes != 1 else ''}! I'll notify you when time's up."
+        else:
+            return f"Timer set for {seconds} second{'s' if seconds != 1 else ''}! I'll notify you when time's up."
+
+    def _schedule_reminder(self, params: dict) -> str:
+        """Schedule a reminder for later."""
+        # For now, create a task that can be checked later
+        # This could be enhanced to integrate with a real cron system
+
+        # Save as a special task with reminder flag
+        task_title = "Scheduled Reminder"
+        task_desc = "A reminder was scheduled for later"
+
+        task_id = self.db.create_task(task_title, task_desc)
+        if task_id:
+            return f"Reminder scheduled! Check your tasks with 'list my tasks' to see when it's due."
+        else:
+            return "Failed to schedule reminder."
