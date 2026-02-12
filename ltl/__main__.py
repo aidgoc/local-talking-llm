@@ -11,7 +11,7 @@ import os
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ltl.commands import init, status, chat, cron, config_cmd
+from ltl.commands import init, status, chat, cron, config_cmd, tool
 from ltl.core.workspace import get_workspace_path
 from ltl.core.config import load_config
 
@@ -66,6 +66,13 @@ Examples:
     cron_remove = cron_subparsers.add_parser("remove", help="Remove a scheduled task")
     cron_remove.add_argument("task_id", help="Task ID to remove")
     cron_remove.set_defaults(func=cron.remove_task)
+
+    # Tool command
+    tool_parser = subparsers.add_parser("tool", help="Execute tools directly")
+    tool_parser.add_argument("tool_command", help='Tool to execute or "list" to see all tools')
+    tool_parser.add_argument("tool_args", nargs="*", help="Tool arguments (key=value pairs)")
+    tool_parser.add_argument("--tool-name", help="Tool name for help command")
+    tool_parser.set_defaults(func=tool.run)
 
     # Config command
     config_parser = subparsers.add_parser("config", help="Manage configuration")
