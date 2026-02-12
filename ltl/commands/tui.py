@@ -244,8 +244,16 @@ import time
 
 print("🎤 Recording... Press Enter to stop", flush=True)
 
-# Record audio
-samplerate = 16000
+# Get device's native sample rate
+import sounddevice as sd
+try:
+    device_info = sd.query_devices(sd.default.device[0], "input")
+    samplerate = int(device_info["default_samplerate"])
+    print(f"Using device sample rate: {samplerate} Hz", flush=True)
+except:
+    samplerate = 44100  # Common fallback
+    print(f"Using fallback sample rate: {samplerate} Hz", flush=True)
+
 duration = 10  # Max 10 seconds
 recording = []
 
@@ -264,6 +272,16 @@ except Exception as e:
 if recording:
     # Concatenate audio
     audio = np.concatenate(recording, axis=0).flatten()
+
+    # Resample to 16kHz for Whisper if needed
+    if samplerate != 16000:
+        print(f"Resampling from {samplerate} Hz to 16000 Hz for Whisper...", flush=True)
+        from scipy.signal import resample_poly
+        from math import gcd
+        factor = gcd(samplerate, 16000)
+        up = 16000 // factor
+        down = samplerate // factor
+        audio = resample_poly(audio, up, down).astype(np.float32)
 
     # Load and use whisper
     print("Transcribing...", flush=True)
