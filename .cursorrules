@@ -1,0 +1,125 @@
+# Cursor Rules for Talking LLM Assistant
+
+## Project Overview
+Voice-controlled AI assistant with vision that runs entirely locally. Optimized for 4GB GPUs.
+
+## Architecture
+- **Language**: Python 3.9+
+- **AI Backend**: Ollama (local LLMs)
+- **Speech**: Whisper (CPU)
+- **Vision**: OpenCV + Moondream model
+- **TTS**: Piper (CPU)
+- **UI**: Rich terminal interface
+
+## Critical Rules
+
+### GPU Memory Management (MANDATORY)
+```python
+# NEVER load multiple models simultaneously
+# 4GB VRAM limit - only ONE model at a time
+
+# CORRECT pattern:
+resource_mgr.load_text_model()  # Loads gemma3 (3.3GB)
+# ... use text model ...
+resource_mgr.unload_current_model()  # FREE GPU FIRST
+resource_mgr.load_vision_model()     # Then load moondream (1.7GB)
+
+# INCORRECT - will OOM:
+resource_mgr.load_text_model()
+resource_mgr.load_vision_model()  # ❌ GPU overflow!
+```
+
+### Code Style
+- Use type hints (Python 3.9+ style: `str | None`)
+- Add docstrings (Google style)
+- Comments explain WHY, not WHAT
+- Handle errors gracefully with user-friendly messages
+
+### File Organization
+- `src/main.py` - Main application logic
+- `src/tts.py` - Text-to-speech module
+- `config/default.yaml` - Configuration
+- `install.sh` - Installation script
+
+### When Making Changes
+1. Check GPU memory impact first
+2. Test with `--vision` flag if applicable
+3. Update BOTH `app_optimized.py` and `dist/.../src/main.py`
+4. Add configuration options to `default.yaml` if needed
+5. Follow ResourceManager pattern strictly
+
+### Common Patterns
+```python
+# Configuration loading
+def load_config():
+    default_config = {...}
+    if os.path.exists(CONFIG_FILE):
+        config = yaml.safe_load(f)
+        # Merge with defaults
+        return {**default_config, **config}
+    return default_config
+
+# Error handling
+if not cap.isOpened():
+    console.print("[red]❌ Could not open camera!")
+    console.print("[yellow]Hint: Check camera permissions")
+    return None
+
+# GPU check
+if torch.cuda.is_available():
+    gpu_mem = torch.cuda.memory_allocated() / 1e9
+    console.print(f"[dim]GPU: {gpu_mem:.1f}GB[/dim]")
+```
+
+## Key Components
+
+### ResourceManager Class
+Location: `src/main.py:89-203`
+Purpose: Manages GPU memory by loading/unloading models
+Methods:
+- `unload_current_model()` - Free GPU memory
+- `load_text_model()` - Load gemma3
+- `load_vision_model()` - Load moondream
+- `get_text_response()` - Chat response
+- `get_vision_response()` - Image analysis
+
+### Vision Keywords
+triggers camera capture:
+- "see", "look", "camera", "what is this", "describe"
+
+### Model Sizes
+- Gemma3: 3.3GB (text)
+- Moondream: 1.7GB (vision)
+- Whisper: 74MB (CPU)
+- Piper: 60MB (CPU)
+
+## Testing
+```bash
+# Test basic
+python app_optimized.py
+
+# Test with vision
+python app_optimized.py --vision
+
+# Check Ollama
+curl http://localhost:11434/api/tags
+
+# Check GPU
+python -c "import torch; print(f'GPU: {torch.cuda.memory_allocated()/1e9:.2f}GB')"
+```
+
+## Documentation
+- `AI_INSTRUCTIONS.md` - Comprehensive guide
+- `CLAUDE.md` - Claude-specific instructions
+- `README.md` - User documentation
+
+## Dependencies
+- Ollama (must be running on :11434)
+- Whisper (auto-downloads)
+- Piper TTS
+- LangChain
+- OpenCV
+- Rich
+
+## License
+MIT

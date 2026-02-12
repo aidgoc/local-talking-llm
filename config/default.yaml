@@ -1,0 +1,84 @@
+# Central configuration for Talking LLM Personal Assistant
+
+assistant:
+  name: "HNG Assistant"
+  wake_words: ["hey hng", "okay hng"]
+
+# LLM Backend: "ollama", "openrouter", or "auto"
+# auto: use openrouter when online, ollama when offline
+backend: "ollama"
+
+auto_backend:
+  check_interval: 300        # seconds between connectivity checks
+  prefer_online: "openrouter"
+  fallback_offline: "ollama"
+
+ollama:
+  base_url: "http://localhost:11434"
+  text_model: "gemma3"
+  vision_model: "moondream"
+  orchestrator_model: "qwen2.5:0.5b"
+  orchestrator_num_gpu: 0        # Force CPU for orchestrator
+  orchestrator_temperature: 0.1  # Low temp for reliable JSON
+  orchestrator_max_tokens: 150
+  text_temperature: 0.7
+  vision_temperature: 0.7
+
+openrouter:
+  api_key: ""  # Set via env var OPENROUTER_API_KEY
+  base_url: "https://openrouter.ai/api/v1"
+  orchestrator_model: "meta-llama/llama-3.3-70b-instruct:free"
+  text_model: "meta-llama/llama-3.3-70b-instruct:free"
+  vision_model: "nvidia/nemotron-nano-12b-v2-vl:free"
+
+whisper:
+  model: "base.en"
+  device: "cpu"
+
+tts:
+  engine: "piper"
+  piper:
+    voice_path: "~/.local/share/piper/en_US-lessac-medium.onnx"
+    sample_rate: 22050
+
+camera:
+  enabled: true
+  preview_width: 640
+  preview_height: 480
+  capture_width: 512
+  capture_height: 384
+  jpeg_quality: 85
+  auto_capture_timeout: 5
+
+search:
+  enabled: true
+  max_results: 5
+  region: "us-en"
+
+database:
+  path: "~/.local/share/talking-llm/assistant.db"
+  log_interactions: true
+
+vector_store:
+  enabled: true
+  path: "~/.local/share/talking-llm/vectors"
+  embedding_model: "all-MiniLM-L6-v2"
+  embedding_device: "cpu"
+
+sync:
+  enabled: false   # Enable when cloud endpoint is configured
+  sync_interval: 600
+  endpoints: {}    # e.g. memories: "https://api.example.com/sync/memories"
+
+logging:
+  level: "INFO"
+
+chat:
+  max_history_messages: 50
+
+performance:
+  use_gpu: true
+  keep_vision_loaded: false
+  silence_timeout: 1.5
+  vad_aggressiveness: 2
+  enable_perf_monitor: true

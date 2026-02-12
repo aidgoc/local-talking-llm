@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y portaudio19-dev libsndfile1
+
+      - name: Install Python deps
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[dev]" 2>/dev/null || pip install -e .
+          pip install ruff pytest pytest-mock
+
+      - name: Lint with ruff
+        run: ruff check src/ tests/ app_optimized.py tts.py
+
+      - name: Run tests
+        run: pytest tests/ -v --ignore=tests/test_database.py -k "not vector_store"
+        env:
+          # Skip tests that need GPU or heavy models
+          CUDA_VISIBLE_DEVICES: ""

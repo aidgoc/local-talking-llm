@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  talking-llm:
+    build: .
+    container_name: talking-llm
+    environment:
+      - PYTHONUNBUFFERED=1
+      # Override config via environment variables
+      - TALKING_LLM_BACKEND=ollama
+      - TALKING_LLM_OLLAMA_BASE_URL=http://ollama:11434
+    volumes:
+      # Persist data
+      - talking-llm-data:/root/.local/share/talking-llm
+      - talking-llm-config:/root/.config/talking-llm
+      # Mount custom config if exists
+      - ./config:/app/config:ro
+    # Device access for GPU (optional)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    networks:
+      - talking-llm-network
+    depends_on:
+      - ollama
+    stdin_open: true
+    tty: true
+    command: python app_optimized.py --backend ollama
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: talking-llm-ollama
+    volumes:
+      - ollama-data:/root/.ollama
+    # Uncomment for GPU support
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    networks:
+      - talking-llm-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  talking-llm-network:
+    driver: bridge
+
+volumes:
+  talking-llm-data:
+  talking-llm-config:
+  ollama-data:

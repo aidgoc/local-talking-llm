@@ -1,0 +1,96 @@
+# Complete example showing all configuration options
+
+assistant:
+  name: "My Personal Assistant"
+  wake_words: ["hey assistant", "ok assistant", "hey computer"]
+
+# Backend selection: "ollama", "openrouter", or "auto"
+backend: "auto"
+
+# Auto backend configuration
+auto_backend:
+  check_interval: 300        # Check connectivity every 5 minutes
+  prefer_online: "openrouter"
+  fallback_offline: "ollama"
+
+# Local Ollama configuration
+ollama:
+  base_url: "http://localhost:11434"
+  text_model: "gemma3"           # 3.3GB - main chat model
+  vision_model: "moondream"      # 1.7GB - vision analysis
+  orchestrator_model: "qwen2.5:0.5b"  # 0.5B params - intent routing
+  orchestrator_num_gpu: 0        # Force CPU for orchestrator
+  orchestrator_temperature: 0.1  # Low temp for reliable JSON
+  orchestrator_max_tokens: 150
+  text_temperature: 0.7
+  vision_temperature: 0.7
+
+# Cloud OpenRouter configuration
+openrouter:
+  api_key: ""  # Set via environment variable: OPENROUTER_API_KEY
+  base_url: "https://openrouter.ai/api/v1"
+  orchestrator_model: "meta-llama/llama-3.3-70b-instruct:free"
+  text_model: "meta-llama/llama-3.3-70b-instruct:free"
+  vision_model: "nvidia/nemotron-nano-12b-v2-vl:free"
+
+# Whisper speech recognition
+whisper:
+  model: "base.en"    # Options: tiny.en, base.en, small.en, medium.en, large
+  device: "cpu"       # Options: cpu, cuda (if GPU available)
+
+# Text-to-Speech configuration
+tts:
+  engine: "piper"
+  piper:
+    voice_path: "~/.local/share/piper/en_US-lessac-medium.onnx"
+    sample_rate: 22050
+
+# Camera settings for vision features
+camera:
+  enabled: true
+  preview_width: 640
+  preview_height: 480
+  capture_width: 512
+  capture_height: 384
+  jpeg_quality: 85
+  auto_capture_timeout: 5
+
+# Web search configuration
+search:
+  enabled: true
+  max_results: 5
+  region: "us-en"
+
+# SQLite database for persistence
+database:
+  path: "~/.local/share/talking-llm/assistant.db"
+  log_interactions: true
+
+# Vector store for semantic search
+vector_store:
+  enabled: true
+  path: "~/.local/share/talking-llm/vectors"
+  embedding_model: "all-MiniLM-L6-v2"  # 22MB model
+  embedding_device: "cpu"
+
+# Cloud sync (optional)
+sync:
+  enabled: false
+  sync_interval: 600
+  endpoints: {}
+
+# Logging configuration
+logging:
+  level: "INFO"  # Options: DEBUG, INFO, WARNING, ERROR
+
+# Chat settings
+chat:
+  max_history_messages: 50  # Prevents memory leaks
+
+# Performance tuning
+performance:
+  use_gpu: true
+  keep_vision_loaded: false  # Set to true if using vision frequently
+  silence_timeout: 1.5
+  vad_aggressiveness: 2
+  enable_perf_monitor: true

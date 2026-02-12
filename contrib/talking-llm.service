@@ -1,0 +1,22 @@
+[Unit]
+Description=Local Talking LLM Personal Assistant
+After=network.target ollama.service
+Wants=ollama.service
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=/opt/talking-llm
+ExecStart=/opt/talking-llm/run_optimized.sh
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/%i/.local/share/talking-llm
+
+[Install]
+WantedBy=multi-user.target

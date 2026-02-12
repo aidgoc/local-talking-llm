@@ -1,0 +1,37 @@
+# Cloud-only configuration using OpenRouter
+# No local models needed
+
+assistant:
+  name: "Cloud Assistant"
+  wake_words: ["hey assistant"]
+
+backend: "openrouter"
+
+openrouter:
+  api_key: "${OPENROUTER_API_KEY}"  # Set via environment variable
+  base_url: "https://openrouter.ai/api/v1"
+  orchestrator_model: "meta-llama/llama-3.3-70b-instruct:free"
+  text_model: "meta-llama/llama-3.3-70b-instruct:free"
+  vision_model: "nvidia/nemotron-nano-12b-v2-vl:free"
+
+whisper:
+  model: "base.en"
+  device: "cpu"
+
+tts:
+  engine: "piper"
+  piper:
+    voice_path: "~/.local/share/piper/en_US-lessac-medium.onnx"
+
+camera:
+  enabled: true
+  capture_width: 512
+  capture_height: 384
+
+search:
+  enabled: true
+  max_results: 5
+
+performance:
+  use_gpu: false  # No GPU needed for cloud
+  enable_perf_monitor: true
