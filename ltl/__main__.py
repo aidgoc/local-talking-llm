@@ -11,7 +11,7 @@ import os
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ltl.commands import init, status, chat, cron, tool, gateway, setup
+from ltl.commands import init, status, chat, cron, tool, gateway, setup, tui
 import ltl.commands.config_wizard as config_wizard
 from ltl.core.workspace import get_workspace_path
 from ltl.core.config import load_config
@@ -84,15 +84,20 @@ Examples:
     setup_parser.add_argument("setup_command", nargs="?", help="Setup command (localai, whisper)")
     setup_parser.set_defaults(func=setup.run)
 
+    # TUI command (default)
+    tui_parser = subparsers.add_parser("tui", help="Launch unified terminal interface (default)")
+    tui_parser.set_defaults(func=tui.run)
+
     # Config command (enhanced with wizard)
     config_wizard.add_config_subparser(subparsers)
 
     # Parse args
     args = parser.parse_args()
 
+    # Default to TUI if no command provided
     if not args.command:
-        parser.print_help()
-        sys.exit(1)
+        args.command = "tui"
+        args.func = tui.run
 
     try:
         # Run the command
