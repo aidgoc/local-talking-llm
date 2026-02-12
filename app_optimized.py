@@ -559,7 +559,12 @@ def process_interaction(
         try:
             with console.status("[magenta]Speaking...", spinner="dots"):
                 sample_rate, audio_array = tts_service.long_form_synthesize(response)
-            play_audio(sample_rate, audio_array)
+            # Play the audio directly - our enhanced TTS already handles resampling
+            if SOUNDDEVICE_AVAILABLE:
+                sd.play(audio_array, sample_rate)
+                sd.wait()
+            else:
+                console.print("[yellow]Audio playback disabled - sounddevice not available[/yellow]")
         except Exception as e:
             log.error("TTS playback failed: %s", e)
             console.print(f"[yellow]Speech output failed: {e}[/yellow]")

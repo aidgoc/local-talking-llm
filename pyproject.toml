@@ -15,6 +15,7 @@ dependencies = [
     "piper-tts>=1.4.0",
     "PyYAML>=6.0.2",
     "rich>=14.0.0",
+    "scipy>=1.9.0",
     "sentence-transformers>=3.0.0",
     "sounddevice>=0.5.2",
     "torch>=2.0.0",

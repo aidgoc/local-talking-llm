@@ -17,6 +17,9 @@ else
     exit 1
 fi
 
+# Ensure scipy is available for TTS resampling
+pip install -q scipy
+
 python app_optimized.py \
     --whisper-model base.en \
     "$@"
