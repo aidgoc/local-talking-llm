@@ -36,13 +36,34 @@ class LTLTUI:
         self.chat_history: List[str] = []
 
         # Check for voice components
-        try:
-            import whisper
-            import sounddevice as sd
+        self.voice_enabled = self._check_voice_components()
 
-            self.voice_enabled = True
-        except ImportError:
-            self.voice_enabled = False
+    def _check_voice_components(self) -> bool:
+        """Check if voice components are available."""
+        try:
+            # Check if whisper venv exists and has packages
+            whisper_venv = os.path.expanduser("~/whisper-env")
+            if os.path.exists(whisper_venv):
+                # Try to import from venv
+                import sys
+                import subprocess
+
+                # Use the venv python to test imports
+                venv_python = os.path.join(whisper_venv, "bin", "python3")
+                if os.path.exists(venv_python):
+                    result = subprocess.run(
+                        [venv_python, "-c", "import whisper, sounddevice; print('OK')"],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    return result.returncode == 0 and "OK" in result.stdout
+
+            return False
+        except Exception:
+            return False
+        except Exception:
+            return False
 
     def show_welcome(self):
         """Show welcome screen."""
@@ -140,50 +161,101 @@ class LTLTUI:
             self.console.print("[red]❌ Voice not available[/red]")
             return
 
+        import os
+
         try:
-            # Import voice components
-            import numpy as np
-            import sounddevice as sd
-            import whisper
+            # Use the whisper-env python for voice processing
+            whisper_venv = os.path.expanduser("~/whisper-env")
+            venv_python = os.path.join(whisper_venv, "bin", "python3")
 
-            # Load whisper model
-            self.console.print("[yellow]Loading Whisper model...[/yellow]")
-            whisper_model = whisper.load_model("tiny")
+            if not os.path.exists(venv_python):
+                self.console.print("[red]❌ Whisper environment not found[/red]")
+                return
 
-            # Record audio
-            self.console.print("[green]🎤 Recording... Press Enter to stop[/green]")
+            # Create a simple voice recording script
+            voice_script = """
+import sys
+import numpy as np
+import sounddevice as sd
+import whisper
+import time
 
-            # Simple recording setup
-            samplerate = 16000
-            duration = 10  # Max 10 seconds
-            recording = []
+print("🎤 Recording... Press Enter to stop", flush=True)
 
-            def callback(indata, frames, time, status):
-                recording.append(indata.copy())
+# Record audio
+samplerate = 16000
+duration = 10  # Max 10 seconds
+recording = []
 
-            stream = sd.InputStream(samplerate=samplerate, channels=1, dtype="float32", callback=callback)
+def callback(indata, frames, time_info, status):
+    recording.append(indata.copy())
 
-            with stream:
-                input("Press Enter to stop recording...")
-                stream.stop()
+try:
+    stream = sd.InputStream(samplerate=samplerate, channels=1, dtype="float32", callback=callback)
+    with stream:
+        input()  # Wait for Enter
+        stream.stop()
+except Exception as e:
+    print(f"Recording failed: {e}", flush=True)
+    sys.exit(1)
 
-            if recording:
-                # Concatenate audio
-                audio = np.concatenate(recording, axis=0).flatten()
+if recording:
+    # Concatenate audio
+    audio = np.concatenate(recording, axis=0).flatten()
 
-                # Transcribe
-                self.console.print("[yellow]Transcribing...[/yellow]")
-                result = whisper_model.transcribe(audio, fp16=False)
-                text = result["text"].strip()
+    # Load and use whisper
+    print("Transcribing...", flush=True)
+    model = whisper.load_model("tiny")
+    result = model.transcribe(audio, fp16=False)
+    text = result["text"].strip()
 
-                if text:
-                    self.console.print(f"[green]🎤 Heard: {text}[/green]")
-                    # Process as chat message
-                    self.handle_chat(text)
+    if text:
+        print(f"TRANSCRIBED: {text}", flush=True)
+    else:
+        print("NO_SPEECH", flush=True)
+else:
+    print("NO_AUDIO", flush=True)
+"""
+
+            # Write script to temp file and execute
+            import tempfile
+
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+                f.write(voice_script)
+                script_path = f.name
+
+            try:
+                import subprocess
+
+                self.console.print("[green]🎤 Recording... Press Enter to stop[/green]")
+
+                # Run the voice script
+                result = subprocess.run([venv_python, script_path], capture_output=True, text=True, timeout=30)
+
+                if result.returncode == 0:
+                    output = result.stdout.strip()
+                    if output.startswith("TRANSCRIBED: "):
+                        text = output[12:]  # Remove "TRANSCRIBED: " prefix
+                        self.console.print(f"[green]🎤 Heard: {text}[/green]")
+                        # Process as chat message
+                        self.handle_chat(text)
+                    elif output == "NO_SPEECH":
+                        self.console.print("[yellow]No speech detected[/yellow]")
+                    elif output == "NO_AUDIO":
+                        self.console.print("[yellow]No audio recorded[/yellow]")
+                    else:
+                        self.console.print(f"[yellow]Recording result: {output}[/yellow]")
                 else:
-                    self.console.print("[yellow]No speech detected[/yellow]")
-            else:
-                self.console.print("[yellow]No audio recorded[/yellow]")
+                    self.console.print(f"[red]❌ Recording failed: {result.stderr}[/red]")
+
+            finally:
+                # Clean up temp file
+                import os
+
+                try:
+                    os.unlink(script_path)
+                except:
+                    pass
 
         except Exception as e:
             self.console.print(f"[red]❌ Voice recording failed: {e}[/red]")

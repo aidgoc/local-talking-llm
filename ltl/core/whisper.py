@@ -26,7 +26,7 @@ class WhisperTranscriber:
                 # Try to import from dedicated whisper venv
                 import sys
 
-                whisper_venv = os.path.expanduser("~/whisper-venv")
+                whisper_venv = os.path.expanduser("~/whisper-env")
                 if os.path.exists(whisper_venv):
                     # Try different Python versions
                     for py_ver in ["python3.14", "python3.13", "python3.12"]:
