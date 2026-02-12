@@ -18,8 +18,23 @@ import time
 import traceback
 import threading
 import numpy as np
-import whisper
-import sounddevice as sd
+
+# Optional imports with fallbacks
+try:
+    import whisper
+
+    WHISPER_AVAILABLE = True
+except ImportError:
+    WHISPER_AVAILABLE = False
+    print("⚠️  Whisper not available - voice input disabled")
+
+try:
+    import sounddevice as sd
+
+    SOUNDDEVICE_AVAILABLE = True
+except ImportError:
+    SOUNDDEVICE_AVAILABLE = False
+    print("⚠️  Sounddevice not available - audio input disabled")
 import argparse
 import torch
 import cv2
@@ -88,6 +103,7 @@ class ResourceManager:
             api_key = or_cfg.get("api_key", "")
             if api_key:
                 from src.openrouter import OpenRouterClient
+
                 self._openrouter = OpenRouterClient(
                     api_key=api_key,
                     base_url=or_cfg.get("base_url", "https://openrouter.ai/api/v1"),
@@ -140,7 +156,8 @@ class ResourceManager:
             ) as progress:
                 progress.add_task(f"Loading {self.text_model}...", total=None)
                 self.text_llm = OllamaLLM(
-                    model=self.text_model, base_url=self.base_url,
+                    model=self.text_model,
+                    base_url=self.base_url,
                     temperature=self.text_temp,
                 )
             console.print(f"[green]{self.text_model} ready (GPU)[/green]")
@@ -165,9 +182,7 @@ class ResourceManager:
         backend = self._active_backend()
         if backend == "openrouter" and self._openrouter:
             hist_dicts = self._history_to_dicts(history)
-            return self._openrouter.get_text_response(
-                text, self._or_text_model, history=hist_dicts
-            )
+            return self._openrouter.get_text_response(text, self._or_text_model, history=hist_dicts)
 
         self.load_text_model()
 
@@ -190,9 +205,7 @@ class ResourceManager:
             history_messages_key="history",
         )
 
-        return chain_with_history.invoke(
-            {"input": text}, config={"session_id": "voice_assistant"}
-        ).strip()
+        return chain_with_history.invoke({"input": text}, config={"session_id": "voice_assistant"}).strip()
 
     def get_vision_response(self, text: str, image_b64: str) -> str:
         """Get vision response (local Moondream on GPU, or cloud via OpenRouter)."""
@@ -200,9 +213,7 @@ class ResourceManager:
         # OpenRouter: send image to cloud vision model
         if backend == "openrouter" and self._openrouter:
             console.print(f"[yellow]Sending image to {self._or_vision_model} (cloud)...[/yellow]")
-            return self._openrouter.get_vision_response(
-                text, image_b64, self._or_vision_model
-            )
+            return self._openrouter.get_vision_response(text, image_b64, self._or_vision_model)
 
         # Ollama: swap Moondream onto GPU
         self._swap_to(self.vision_model)
@@ -213,9 +224,7 @@ class ResourceManager:
             f"{self.base_url}/api/chat",
             json={
                 "model": self.vision_model,
-                "messages": [
-                    {"role": "user", "content": text, "images": [image_b64]}
-                ],
+                "messages": [{"role": "user", "content": text, "images": [image_b64]}],
                 "stream": False,
             },
             timeout=60,
@@ -241,6 +250,8 @@ class ResourceManager:
 
 def _get_recording_samplerate() -> int:
     """Get the default input device's native sample rate."""
+    if not SOUNDDEVICE_AVAILABLE:
+        return 16000  # Default fallback
     info = sd.query_devices(sd.default.device[0], "input")
     return int(info["default_samplerate"])
 
@@ -257,21 +268,25 @@ def _resample(audio: np.ndarray, orig_sr: int, target_sr: int) -> np.ndarray:
 
 def record_audio(stop_event, data_queue, samplerate: int):
     """Record audio from microphone using sd.InputStream at native rate."""
+    if not SOUNDDEVICE_AVAILABLE:
+        console.print("[yellow]Audio recording disabled - sounddevice not available[/yellow]")
+        return
 
     def callback(indata, frames, time_info, status):
         if status:
             console.print(status)
         data_queue.put(indata.copy())
 
-    with sd.InputStream(
-        samplerate=samplerate, channels=1, dtype="float32", callback=callback
-    ):
+    with sd.InputStream(samplerate=samplerate, channels=1, dtype="float32", callback=callback):
         while not stop_event.is_set():
             time.sleep(0.1)
 
 
 def transcribe(stt_model, audio_np: np.ndarray, recording_sr: int) -> str:
     """Transcribe audio using Whisper on CPU (resamples to 16 kHz if needed)."""
+    if stt_model is None:
+        return "[Voice input disabled - Whisper not available]"
+
     audio_16k = _resample(audio_np, recording_sr, 16000)
     result = stt_model.transcribe(audio_16k, fp16=False)
     return result["text"].strip()
@@ -320,16 +335,31 @@ def capture_image(config: dict) -> str | None:
         remaining = max(0, timeout - (time.time() - start_time))
 
         cv2.putText(
-            display_frame, "Press SPACE to capture", (10, 30),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2,
+            display_frame,
+            "Press SPACE to capture",
+            (10, 30),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (0, 255, 0),
+            2,
         )
         cv2.putText(
-            display_frame, "Press ESC to cancel", (10, 60),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2,
+            display_frame,
+            "Press ESC to cancel",
+            (10, 60),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (0, 0, 255),
+            2,
         )
         cv2.putText(
-            display_frame, f"Auto-capture in: {remaining:.1f}s", (10, 90),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2,
+            display_frame,
+            f"Auto-capture in: {remaining:.1f}s",
+            (10, 90),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (255, 255, 0),
+            2,
         )
 
         cv2.imshow(preview_window, display_frame)
@@ -357,9 +387,7 @@ def capture_image(config: dict) -> str | None:
     console.print("[dim]Processing image...[/dim]")
     frame_rgb = cv2.cvtColor(captured_frame, cv2.COLOR_BGR2RGB)
     pil_image = Image.fromarray(frame_rgb)
-    pil_image = pil_image.resize(
-        (cam_cfg.get("capture_width", 512), cam_cfg.get("capture_height", 384))
-    )
+    pil_image = pil_image.resize((cam_cfg.get("capture_width", 512), cam_cfg.get("capture_height", 384)))
 
     buffered = BytesIO()
     pil_image.save(buffered, format="JPEG", quality=cam_cfg.get("jpeg_quality", 85))
@@ -371,12 +399,18 @@ def capture_image(config: dict) -> str | None:
 
 def _get_playback_samplerate() -> int:
     """Get the default output device's native sample rate."""
+    if not SOUNDDEVICE_AVAILABLE:
+        return 22050  # Default Piper sample rate
     info = sd.query_devices(sd.default.device[1], "output")
     return int(info["default_samplerate"])
 
 
 def play_audio(sample_rate, audio_array, device_sr: int | None = None):
     """Play audio through speakers, resampling to device rate if needed."""
+    if not SOUNDDEVICE_AVAILABLE:
+        console.print("[yellow]Audio playback disabled - sounddevice not available[/yellow]")
+        return
+
     target_sr = device_sr or _get_playback_samplerate()
     if sample_rate != target_sr:
         audio_array = _resample(audio_array, sample_rate, target_sr)
@@ -452,9 +486,7 @@ def process_interaction(
                         backend = resource_mgr._active_backend()
                         if backend == "openrouter":
                             vision_model = resource_mgr._or_vision_model
-                        db.save_image_meta(
-                            description=response, tags=[], vision_model=vision_model
-                        )
+                        db.save_image_meta(description=response, tags=[], vision_model=vision_model)
                         console.print("[dim]Image metadata saved to memory[/dim]")
                     except Exception:
                         pass
@@ -474,9 +506,7 @@ def process_interaction(
             with console.status("[cyan]Searching...", spinner="dots"):
                 search_results = search_engine.search_and_format(query)
 
-            console.print(
-                Panel(search_results, title="Search Results", border_style="cyan")
-            )
+            console.print(Panel(search_results, title="Search Results", border_style="cyan"))
 
             summarize_prompt = (
                 f"Based on these search results, answer the user's question: '{text}'\n\n"
@@ -484,9 +514,7 @@ def process_interaction(
                 f"Provide a concise, helpful answer."
             )
             with console.status("[green]Summarizing...", spinner="dots"):
-                response = resource_mgr.get_text_response(
-                    summarize_prompt, chat_history
-                )
+                response = resource_mgr.get_text_response(summarize_prompt, chat_history)
         else:
             console.print("[yellow]Search disabled, using text model...[/yellow]")
             with console.status("[green]Thinking...", spinner="dots"):
@@ -541,9 +569,12 @@ def process_interaction(
         duration = time.time() - t_start
         try:
             db.log_interaction(
-                user_input=text, intent=intent, response=response,
+                user_input=text,
+                intent=intent,
+                response=response,
                 backend=resource_mgr._active_backend(),
-                model_used=resource_mgr.text_model, duration=duration,
+                model_used=resource_mgr.text_model,
+                duration=duration,
             )
         except Exception:
             pass
@@ -737,18 +768,21 @@ def main():
             log.error("Vector store init failed: %s", e)
             console.print(f"[yellow]Vector store unavailable: {e}[/yellow]")
 
-    # Whisper STT (critical - exit if fails)
-    try:
-        console.print(f"[yellow]Loading Whisper {whisper_model} (CPU)...[/yellow]")
-        stt_model = whisper.load_model(whisper_model, device="cpu")
-        console.print("[green]Whisper ready[/green]")
-        log.info("Whisper loaded: %s", whisper_model)
-    except Exception as e:
-        log.error("Whisper load failed (critical): %s", e)
-        console.print(f"[red]Cannot load Whisper: {e}[/red]")
-        console.print("[red]STT is required. Exiting.[/red]")
-        _cleanup(None, db)
-        sys.exit(1)
+    # Whisper STT (optional - skip if not available)
+    stt_model = None
+    if WHISPER_AVAILABLE:
+        try:
+            console.print(f"[yellow]Loading Whisper {whisper_model} (CPU)...[/yellow]")
+            stt_model = whisper.load_model(whisper_model, device="cpu")
+            console.print("[green]Whisper ready[/green]")
+            log.info("Whisper loaded: %s", whisper_model)
+        except Exception as e:
+            log.error("Whisper load failed: %s", e)
+            console.print(f"[yellow]Whisper unavailable: {e}[/yellow]")
+            console.print("[yellow]Voice input disabled - use text mode[/yellow]")
+    else:
+        console.print("[yellow]Whisper not installed - voice input disabled[/yellow]")
+        console.print("[yellow]Install with: pip install openai-whisper[/yellow]")
 
     # Piper TTS (non-critical)
     tts_service = None
@@ -843,9 +877,7 @@ def main():
 
             data_queue = Queue()
             stop_event = threading.Event()
-            recording_thread = threading.Thread(
-                target=record_audio, args=(stop_event, data_queue, recording_sr)
-            )
+            recording_thread = threading.Thread(target=record_audio, args=(stop_event, data_queue, recording_sr))
             recording_thread.start()
 
             try:

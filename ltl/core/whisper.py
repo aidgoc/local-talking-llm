@@ -23,13 +23,25 @@ class WhisperTranscriber:
         """Load the Whisper model."""
         if self.model is None:
             try:
+                # Try to import from dedicated whisper venv
+                import sys
+
+                whisper_venv = os.path.expanduser("~/whisper-venv")
+                if os.path.exists(whisper_venv):
+                    # Try different Python versions
+                    for py_ver in ["python3.14", "python3.13", "python3.12"]:
+                        site_packages = os.path.join(whisper_venv, "lib", py_ver, "site-packages")
+                        if os.path.exists(site_packages):
+                            sys.path.insert(0, site_packages)
+                            break
+
                 import whisper
 
                 print(f"🎤 Loading Whisper model: {self.model_name}")
                 self.model = whisper.load_model(self.model_name)
                 print("✅ Whisper model loaded")
-            except ImportError:
-                raise ImportError("openai-whisper not installed. Run: pip install openai-whisper")
+            except ImportError as e:
+                raise ImportError(f"openai-whisper not installed. Run: pip install openai-whisper. Error: {e}")
 
     def transcribe_audio(self, audio_data: bytes, sample_rate: int = 16000) -> Optional[str]:
         """Transcribe audio data to text."""
