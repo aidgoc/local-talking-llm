@@ -116,8 +116,12 @@ class TelegramChannel(Channel):
 
     async def _async_polling(self):
         await self.application.initialize()
+        # Flush any stale long-poll session before starting our own
+        try:
+            await self.application.bot.get_updates(offset=-1, timeout=0)
+        except Exception:
+            pass
         await self.application.start()
-        # drop_pending_updates=True clears stale sessions from previous runs
         await self.application.updater.start_polling(
             allowed_updates=self.Update.ALL_TYPES,
             drop_pending_updates=True,
