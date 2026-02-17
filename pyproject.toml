@@ -23,6 +23,13 @@ dependencies = [
     "webrtcvad-wheels>=2.0.14",
 ]
 
+[project.scripts]
+ltl = "ltl.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ltl*", "src*"]
+
 [dependency-groups]
 dev = [
     "pre-commit>=4.2.0",
