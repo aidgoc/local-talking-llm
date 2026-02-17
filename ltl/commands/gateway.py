@@ -14,7 +14,7 @@ log = logging.getLogger(__name__)
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from ltl.core.bus import get_bus
+from ltl.core.bus import get_bus, OutboundMessage
 from ltl.core.config import load_config
 from ltl.channels import get_manager
 from ltl.channels.telegram import create_telegram_channel
@@ -179,7 +179,7 @@ def process_messages(rlm_client):
                 response = "Assistant is currently unavailable. Please try again later."
 
             # Send response back to channel
-            outbound_msg = bus.OutboundMessage(
+            outbound_msg = OutboundMessage(
                 channel=msg.channel, chat_id=msg.chat_id, content=response, timestamp=time.time()
             )
             bus.publish_outbound(outbound_msg)
