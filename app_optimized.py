@@ -189,7 +189,10 @@ class ResourceManager:
         """Get text response from LLM (GPU for Ollama, cloud for OpenRouter)."""
         if self._rlm_client:
             self.load_text_model()   # still ensures the right model is in VRAM
-            return self._rlm_client.get_response(text, history.messages)
+            try:
+                return self._rlm_client.get_response(text, history.messages)
+            except Exception as e:
+                log.warning("RLM failed (%s), falling back to LangChain", e)
 
         backend = self._active_backend()
         if backend == "openrouter" and self._openrouter:

@@ -118,7 +118,8 @@ class TextChatAssistant:
                     self.chat_history.add_message(AIMessage(content=response))
                     return response
                 except Exception as e:
-                    return f"Sorry, I encountered an error: {e}"
+                    import logging
+                    logging.getLogger(__name__).warning("RLM failed (%s), falling back to LangChain", e)
             try:
                 response = self.chain.invoke(
                     {"input": enriched}, config={"configurable": {"session_id": "ltl-cli-chat"}}

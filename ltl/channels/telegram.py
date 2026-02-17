@@ -268,7 +268,7 @@ class TelegramChannel(Channel):
             return None, None
 
     def _describe_image(self, image_b64: str) -> str:
-        """Describe image using Moondream via Ollama."""
+        """Describe image using Moondream via Ollama (GPU)."""
         try:
             import requests
             r = requests.post(
@@ -279,8 +279,9 @@ class TelegramChannel(Channel):
                         {"role": "user", "content": "Describe what you see in this image.", "images": [image_b64]}
                     ],
                     "stream": False,
+                    "options": {"num_gpu": 99},  # all layers on GPU
                 },
-                timeout=45,
+                timeout=90,
             )
             if r.status_code == 200:
                 return r.json()["message"]["content"].strip()

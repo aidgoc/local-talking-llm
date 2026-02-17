@@ -23,7 +23,8 @@ class RLMClient:
         system_prompt = rlm_cfg.get("system_prompt", _SYSTEM_PROMPT)
 
         if backend in ("ollama", "auto"):
-            ollama_cfg = config.get("ollama", {})
+            # Support both top-level "ollama" key (default.yaml) and "providers.ollama" (config.json)
+            ollama_cfg = config.get("ollama") or config.get("providers", {}).get("ollama", {})
             base_url = ollama_cfg.get("base_url", "http://localhost:11434").rstrip("/") + "/v1"
             self._rlm = RLM(
                 backend="openai",
@@ -31,6 +32,7 @@ class RLMClient:
                     "api_key": "ollama",   # Ollama ignores the key
                     "base_url": base_url,
                     "model_name": ollama_cfg.get("text_model", "gemma3"),
+                    "timeout": 120.0,      # local models can be slow
                 },
                 max_depth=max_depth,
                 custom_system_prompt=system_prompt,
