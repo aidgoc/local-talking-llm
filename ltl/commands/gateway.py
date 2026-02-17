@@ -16,6 +16,7 @@ from ltl.core.config import load_config
 from ltl.channels import get_manager
 from ltl.channels.telegram import create_telegram_channel
 from ltl.channels.discord import create_discord_channel
+from src.rlm_client import RLMClient
 
 
 def run(args):
@@ -83,8 +84,16 @@ def run(args):
     # Start channels
     manager.start_all()
 
+    # Init RLM client for responding to messages
+    rlm_client = None
+    try:
+        rlm_client = RLMClient(cfg)
+        print("✓ RLMClient ready")
+    except Exception as e:
+        print(f"⚠️  RLMClient unavailable ({e}) — falling back to echo")
+
     # Start message processing thread
-    processing_thread = threading.Thread(target=process_messages, daemon=True)
+    processing_thread = threading.Thread(target=process_messages, args=(rlm_client,), daemon=True)
     processing_thread.start()
 
     print("\n✅ Gateway started! Press Ctrl+C to stop")
@@ -103,7 +112,7 @@ def run(args):
     print("✅ Gateway stopped")
 
 
-def process_messages():
+def process_messages(rlm_client):
     """Process inbound messages and route to assistant."""
     bus = get_bus()
 
@@ -116,9 +125,14 @@ def process_messages():
 
             print(f"📨 [{msg.channel}] {msg.sender_id}: {msg.content[:50]}...")
 
-            # TODO: Route to assistant for processing
-            # For now, just echo back a placeholder response
-            response = f"Hello! I received your message: '{msg.content[:100]}...'"
+            # Route to RLM assistant, fall back to echo if unavailable
+            if rlm_client:
+                try:
+                    response = rlm_client.get_response(msg.content)
+                except Exception as e:
+                    response = f"Sorry, I encountered an error: {e}"
+            else:
+                response = f"(Assistant unavailable) You said: {msg.content}"
 
             # Send response back to channel
             outbound_msg = bus.OutboundMessage(
