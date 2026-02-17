@@ -21,6 +21,7 @@ from rich.markdown import Markdown
 
 from ltl.core.config import load_config
 from ltl.commands.chat import TextChatAssistant
+from ltl.commands.gateway import start_background as start_gateway_background
 
 # Optional TTS import
 try:
@@ -47,6 +48,15 @@ class LTLTUI:
         # Check for voice components
         self.voice_enabled = self._check_voice_components()
         self.tts_enabled = self._check_tts_components()
+
+        # Auto-start gateway (Telegram, Discord) in background if configured
+        self.active_channels = []
+        try:
+            self.active_channels = start_gateway_background(self.config)
+            if self.active_channels:
+                self.console.print(f"[green]✓ Gateway started: {', '.join(self.active_channels)}[/green]")
+        except Exception as e:
+            self.console.print(f"[yellow]⚠️  Gateway unavailable: {e}[/yellow]")
 
         # TTS will be initialized on-demand using subprocess
 
@@ -135,7 +145,7 @@ except Exception as e:
             f"Voice Input: {'✅ Enabled' if self.voice_enabled else '❌ Disabled'}\n"
             f"Voice Output: {'✅ Enabled' if self.tts_enabled else '❌ Disabled'}\n"
             f"Ollama: {'✅ Connected' if self._check_ollama() else '❌ Not connected'}\n"
-            f"Channels: {self._get_channel_status()}\n\n"
+            f"Telegram: {'✅ ' + ', '.join(self.active_channels) if self.active_channels else '❌ Not configured'}\n\n"
             "Commands:\n"
             "  /chat     - Text chat mode\n"
             "  /voice    - Voice input mode\n"

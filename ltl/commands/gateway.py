@@ -19,6 +19,46 @@ from ltl.channels.discord import create_discord_channel
 from src.rlm_client import RLMClient
 
 
+def start_background(cfg: dict) -> list[str]:
+    """Start the gateway in background threads (non-blocking).
+
+    Returns the list of enabled channel names, or [] if none configured.
+    Called automatically by the TUI on startup.
+    """
+    bus = get_bus()
+    bus.start()
+
+    manager = get_manager(bus)
+    channels_config = cfg.get("channels", {})
+
+    telegram_config = channels_config.get("telegram", {})
+    if telegram_config.get("enabled", False):
+        ch = create_telegram_channel(bus, telegram_config)
+        if ch:
+            manager.register_channel(ch)
+
+    discord_config = channels_config.get("discord", {})
+    if discord_config.get("enabled", False):
+        ch = create_discord_channel(bus, discord_config)
+        if ch:
+            manager.register_channel(ch)
+
+    enabled = manager.get_enabled_channels()
+    if not enabled:
+        return []
+
+    manager.start_all()
+
+    rlm_client = None
+    try:
+        rlm_client = RLMClient(cfg)
+    except Exception:
+        pass
+
+    threading.Thread(target=process_messages, args=(rlm_client,), daemon=True).start()
+    return enabled
+
+
 def run(args):
     """Run the gateway command."""
     print("🎙️  LTL Gateway\n")
