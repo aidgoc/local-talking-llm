@@ -16,7 +16,7 @@ class PiperTTSService:
     """Text-to-speech using Piper (CPU, ~60MB)."""
 
     def __init__(self, voice_path: str | None = None):
-        path = voice_path or _DEFAULT_VOICE
+        path = os.path.expanduser(voice_path or _DEFAULT_VOICE)
         if not os.path.exists(path):
             raise FileNotFoundError(
                 f"Piper voice model not found: {path}\n"
