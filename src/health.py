@@ -50,15 +50,20 @@ def check_ollama(base_url: str, text_model: str, vision_model: str | None = None
 
     results.append(CheckResult("Ollama", "pass", f"Connected to {base_url}"))
 
-    available = {m["name"].split(":")[0] for m in resp.json().get("models", [])}
+    models = resp.json().get("models", [])
+    available_full = {m["name"] for m in models}
+    available_base = {m["name"].split(":")[0] for m in models}
 
-    if text_model in available:
+    def _model_ok(name: str) -> bool:
+        return name in available_full or name in available_base or f"{name}:latest" in available_full
+
+    if _model_ok(text_model):
         results.append(CheckResult(f"Model '{text_model}'", "pass", "Available"))
     else:
         results.append(CheckResult(f"Model '{text_model}'", "fail", f"Not pulled. Run: ollama pull {text_model}"))
 
     if vision_model:
-        if vision_model in available:
+        if _model_ok(vision_model):
             results.append(CheckResult(f"Model '{vision_model}'", "pass", "Available"))
         else:
             results.append(
