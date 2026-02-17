@@ -13,6 +13,7 @@ try:
     from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
     from langchain_core.runnables.history import RunnableWithMessageHistory
     from langchain_ollama import OllamaLLM
+    from src.persistent_history import PersistentHistory, make_session_id
 
     LANGCHAIN_AVAILABLE = True
 except ImportError:
@@ -47,8 +48,22 @@ class TextChatAssistant:
         self.temperature = config.get("agents", {}).get("defaults", {}).get("temperature", 0.7)
 
         if LANGCHAIN_AVAILABLE:
-            # Use langchain if available
-            self.chat_history = InMemoryChatMessageHistory()
+            # Use persistent history (falls back to in-memory on failure)
+            hist_cfg = config.get("history", {})
+            ollama_base = config.get("ollama", {}).get("base_url", "http://localhost:11434")
+            ollama_model = config.get("ollama", {}).get("text_model", "qwen2.5:3b")
+            try:
+                self.chat_history = PersistentHistory(
+                    db_path=hist_cfg.get("db_path", "~/.local/share/talking-llm/chat_history.db"),
+                    session_id=make_session_id(hist_cfg.get("session_prefix", "cli")),
+                    token_budget=hist_cfg.get("token_budget", 3000),
+                    summarize_threshold=hist_cfg.get("summarize_threshold", 0.8),
+                    restore_messages=hist_cfg.get("restore_messages", 100),
+                    ollama_base_url=ollama_base,
+                    ollama_model=ollama_model,
+                )
+            except Exception:
+                self.chat_history = InMemoryChatMessageHistory()
             self.llm = OllamaLLM(model=self.model, base_url=self.base_url, temperature=self.temperature)
 
             prompt = ChatPromptTemplate.from_messages(

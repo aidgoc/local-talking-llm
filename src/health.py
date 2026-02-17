@@ -83,7 +83,7 @@ def check_audio_devices() -> CheckResult:
 
         if has_input:
             return CheckResult("Audio input", "pass", "Microphone available")
-        return CheckResult("Audio input", "warn", "No input device found (will use text mode)")
+        return CheckResult("Audio input", "fail", "No input device found")
     except Exception as e:
         return CheckResult("Audio input", "warn", f"Audio check failed: {e}")
 

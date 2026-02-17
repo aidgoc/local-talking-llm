@@ -76,6 +76,13 @@ logging:
 chat:
   max_history_messages: 50
 
+history:
+  db_path: "~/.local/share/talking-llm/chat_history.db"
+  token_budget: 3000
+  summarize_threshold: 0.8
+  restore_messages: 100    # How many messages to restore on startup
+  session_prefix: "voice"  # "voice" or "cli"
+
 performance:
   use_gpu: true
   keep_vision_loaded: false

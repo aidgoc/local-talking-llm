@@ -65,6 +65,7 @@ from src.tools import ToolExecutor
 from src.web_search import WebSearch
 from src.health import run_health_checks
 from src.bounded_history import BoundedChatHistory
+from src.persistent_history import PersistentHistory, make_session_id
 from tts import TextToSpeechService
 
 console = Console()
@@ -828,7 +829,21 @@ def main():
     # Resource manager
     resource_mgr = ResourceManager(config, connectivity)
     max_history = config.get("chat", {}).get("max_history_messages", 50)
-    chat_history = BoundedChatHistory(max_messages=max_history)
+    hist_cfg = config.get("history", {})
+    try:
+        chat_history = PersistentHistory(
+            db_path=hist_cfg.get("db_path", "~/.local/share/talking-llm/chat_history.db"),
+            session_id=make_session_id(hist_cfg.get("session_prefix", "voice")),
+            token_budget=hist_cfg.get("token_budget", 3000),
+            summarize_threshold=hist_cfg.get("summarize_threshold", 0.8),
+            restore_messages=hist_cfg.get("restore_messages", 100),
+            ollama_base_url=config.get("ollama", {}).get("base_url", "http://localhost:11434"),
+            ollama_model=config.get("ollama", {}).get("text_model", "qwen2.5:3b"),
+        )
+        console.print("[green]Persistent history enabled[/green]")
+    except Exception as _e:
+        log.warning("PersistentHistory init failed (%s) — falling back to BoundedChatHistory", _e)
+        chat_history = BoundedChatHistory(max_messages=max_history)
 
     # Detect recording sample rate
     recording_sr = _get_recording_samplerate()
