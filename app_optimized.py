@@ -66,6 +66,7 @@ from src.web_search import WebSearch
 from src.health import run_health_checks
 from src.bounded_history import BoundedChatHistory
 from src.persistent_history import PersistentHistory, make_session_id
+from src.rlm_client import RLMClient
 from tts import TextToSpeechService
 
 console = Console()
@@ -111,6 +112,12 @@ class ResourceManager:
                 )
                 self._or_text_model = or_cfg.get("text_model", "meta-llama/llama-3.3-70b-instruct:free")
                 self._or_vision_model = or_cfg.get("vision_model", "nvidia/nemotron-nano-12b-v2-vl:free")
+
+        try:
+            self._rlm_client = RLMClient(config)
+        except Exception as e:
+            log.warning("RLMClient init failed (%s) — using plain Ollama", e)
+            self._rlm_client = None
 
     def _active_backend(self) -> str:
         """Resolve the active backend based on connectivity."""
@@ -180,6 +187,10 @@ class ResourceManager:
 
     def get_text_response(self, text: str, history: InMemoryChatMessageHistory) -> str:
         """Get text response from LLM (GPU for Ollama, cloud for OpenRouter)."""
+        if self._rlm_client:
+            self.load_text_model()   # still ensures the right model is in VRAM
+            return self._rlm_client.get_response(text, history.messages)
+
         backend = self._active_backend()
         if backend == "openrouter" and self._openrouter:
             hist_dicts = self._history_to_dicts(history)

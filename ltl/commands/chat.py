@@ -10,10 +10,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 # Try to import langchain, fallback to simple implementation
 try:
     from langchain_core.chat_history import InMemoryChatMessageHistory
+    from langchain_core.messages import HumanMessage, AIMessage
     from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
     from langchain_core.runnables.history import RunnableWithMessageHistory
     from langchain_ollama import OllamaLLM
     from src.persistent_history import PersistentHistory, make_session_id
+    from src.rlm_client import RLMClient
 
     LANGCHAIN_AVAILABLE = True
 except ImportError:
@@ -83,9 +85,14 @@ class TextChatAssistant:
                 input_messages_key="input",
                 history_messages_key="history",
             )
+            try:
+                self._rlm = RLMClient(config)
+            except Exception:
+                self._rlm = None
         else:
             # Fallback to direct Ollama API calls
             self.use_direct_api = True
+            self._rlm = None
 
     def _maybe_inject_search(self, message: str) -> str:
         """If message looks like a search query, prepend web results and return enriched prompt."""
@@ -104,6 +111,14 @@ class TextChatAssistant:
         """Send a message and get response."""
         enriched = self._maybe_inject_search(message)
         if LANGCHAIN_AVAILABLE:
+            if self._rlm:
+                try:
+                    response = self._rlm.get_response(enriched, self.chat_history.messages)
+                    self.chat_history.add_message(HumanMessage(content=message))
+                    self.chat_history.add_message(AIMessage(content=response))
+                    return response
+                except Exception as e:
+                    return f"Sorry, I encountered an error: {e}"
             try:
                 response = self.chain.invoke(
                     {"input": enriched}, config={"configurable": {"session_id": "ltl-cli-chat"}}
