@@ -5,11 +5,17 @@ between channels and the assistant.
 """
 
 import asyncio
+import logging
 import threading
 import time
 from dataclasses import dataclass
 from typing import Optional, Callable
-from queue import Queue
+from queue import Queue, Full
+
+log = logging.getLogger(__name__)
+
+_INBOUND_MAXSIZE = 500
+_OUTBOUND_MAXSIZE = 200
 
 
 @dataclass
@@ -56,8 +62,10 @@ class MessageBus:
     """
 
     def __init__(self):
-        self.inbound_queue = Queue()
-        self.outbound_queues = {}  # channel -> queue
+        self.inbound_queue = Queue(maxsize=_INBOUND_MAXSIZE)
+        self.outbound_queues: dict[str, Queue] = {}
+        self._handler_lock = threading.RLock()
+        self._channel_handlers: dict[str, Callable] = {}
         self.running = False
         self.thread = None
 
@@ -85,14 +93,15 @@ class MessageBus:
                     try:
                         while not queue.empty():
                             msg = queue.get_nowait()
-                            handlers = getattr(self, "_channel_handlers", {})
-                            if channel in handlers:
+                            with self._handler_lock:
+                                handler = self._channel_handlers.get(channel)
+                            if handler:
                                 try:
-                                    handlers[channel](msg)
+                                    handler(msg)
                                 except Exception as he:
-                                    print(f"[BUS] Handler error for {channel}: {he}")
+                                    log.error("Handler error for %s: %s", channel, he)
                             else:
-                                print(f"[BUS] Outbound to {channel}:{msg.chat_id}: {msg.content[:50]}...")
+                                log.debug("Outbound to %s:%s (no handler)", channel, msg.chat_id)
                     except Exception as e:
                         print(f"[BUS] Error processing outbound for {channel}: {e}")
 
@@ -104,7 +113,10 @@ class MessageBus:
 
     def publish_inbound(self, message: InboundMessage):
         """Publish an inbound message to the assistant."""
-        self.inbound_queue.put(message)
+        try:
+            self.inbound_queue.put_nowait(message)
+        except Full:
+            log.warning("Inbound queue full — dropping message from %s", message.sender_id)
 
     def consume_inbound(self, timeout: float = None) -> Optional[InboundMessage]:
         """Consume an inbound message (blocking)."""
@@ -119,14 +131,16 @@ class MessageBus:
     def publish_outbound(self, message: OutboundMessage):
         """Publish an outbound message to a channel."""
         if message.channel not in self.outbound_queues:
-            self.outbound_queues[message.channel] = Queue()
-
-        self.outbound_queues[message.channel].put(message)
+            self.outbound_queues[message.channel] = Queue(maxsize=_OUTBOUND_MAXSIZE)
+        try:
+            self.outbound_queues[message.channel].put_nowait(message)
+        except Full:
+            log.warning("Outbound queue full for channel %s — dropping reply", message.channel)
 
     def register_channel_handler(self, channel: str, handler: Callable[[OutboundMessage], None]):
         """Register a handler for outbound messages to a specific channel."""
-        self._channel_handlers = getattr(self, "_channel_handlers", {})
-        self._channel_handlers[channel] = handler
+        with self._handler_lock:
+            self._channel_handlers[channel] = handler
 
     def get_channel_queue(self, channel: str) -> Queue:
         """Get the outbound queue for a channel."""

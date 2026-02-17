@@ -3,11 +3,14 @@
 Routes messages between channels and the assistant.
 """
 
+import logging
 import os
 import sys
 import signal
 import time
 import threading
+
+log = logging.getLogger(__name__)
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -165,14 +168,15 @@ def process_messages(rlm_client):
 
             print(f"📨 [{msg.channel}] {msg.sender_id}: {msg.content[:50]}...")
 
-            # Route to RLM assistant, fall back to echo if unavailable
+            # Route to RLM assistant, fall back to generic message on error
             if rlm_client:
                 try:
                     response = rlm_client.get_response(msg.content)
                 except Exception as e:
-                    response = f"Sorry, I encountered an error: {e}"
+                    log.error("RLM error for message from %s: %s", msg.sender_id, e)
+                    response = "Sorry, I couldn't process that request. Please try again."
             else:
-                response = f"(Assistant unavailable) You said: {msg.content}"
+                response = "Assistant is currently unavailable. Please try again later."
 
             # Send response back to channel
             outbound_msg = bus.OutboundMessage(

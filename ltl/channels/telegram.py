@@ -4,6 +4,7 @@ Uses python-telegram-bot library (open source, free).
 """
 
 import asyncio
+import logging
 import os
 import sys
 import threading
@@ -15,6 +16,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from ltl.channels import Channel
 from ltl.core.bus import MessageBus, InboundMessage, OutboundMessage
 
+log = logging.getLogger(__name__)
+
+# Per-user rate limit: max messages per window
+_RATE_LIMIT_MESSAGES = 20
+_RATE_LIMIT_WINDOW = 60  # seconds
+_MAX_MESSAGE_LENGTH = 4000  # Telegram limit is 4096; leave headroom
+
 
 class TelegramChannel(Channel):
     """Telegram bot channel for LTL."""
@@ -23,68 +31,73 @@ class TelegramChannel(Channel):
         super().__init__("telegram", bus)
         self.token = token
         self.allowed_users = allowed_users or []
-        self.bot = None
-        self.updater = None
+        self.application = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        # Per-user rate limiting: {user_id: [timestamps]}
+        self._rate_timestamps: dict[str, list[float]] = {}
+        self._rate_lock = threading.Lock()
+
+        if not self.allowed_users:
+            log.warning(
+                "Telegram allow_from is empty — ALL Telegram users can message this bot. "
+                "Set allow_from in ~/.ltl/config.json to restrict access."
+            )
 
     def start(self):
         """Start the Telegram bot."""
         try:
             from telegram import Update
-            from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+            from telegram.ext import Application, CommandHandler, MessageHandler, filters
         except ImportError:
-            print("❌ python-telegram-bot not installed. Install with: pip install python-telegram-bot")
+            log.error("python-telegram-bot not installed. Run: pip install python-telegram-bot")
             return
 
-        # Store imports for use in methods
         self.Update = Update
-        self.ContextTypes = ContextTypes
 
         if not self.token:
-            print("❌ Telegram bot token not configured")
+            log.error("Telegram bot token not configured")
             return
 
-        # Create application
         self.application = Application.builder().token(self.token).build()
-
-        # Add handlers
         self.application.add_handler(CommandHandler("start", self._handle_start))
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
 
         # Register outbound handler so the bus delivers replies back to Telegram
         self.bus.register_channel_handler("telegram", self._deliver_outbound)
 
-        # Start polling in a separate thread with its own event loop
-        # (avoids set_wakeup_fd restriction that only works on the main thread)
+        # Start polling in its own event loop (avoids set_wakeup_fd main-thread restriction)
         self.running = True
         self.thread = threading.Thread(target=self._run_polling, daemon=True)
         self.thread.start()
 
-        print(f"✅ Telegram bot started (token: {self.token[:10]}...)")
+        log.info("Telegram bot started")
+        print("✅ Telegram bot started")
 
     def stop(self):
         """Stop the Telegram bot."""
         self.running = False
+        log.info("Telegram bot stopped")
         print("✅ Telegram bot stopped")
 
     def _run_polling(self):
         """Run the polling loop in its own asyncio event loop."""
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        self._loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self._loop)
         try:
-            loop.run_until_complete(self._async_polling())
+            self._loop.run_until_complete(self._async_polling())
         except Exception as e:
-            print(f"❌ Telegram polling error: {e}")
+            log.error("Telegram polling error: %s", e)
             self.running = False
         finally:
-            loop.close()
+            self._loop.close()
+            self._loop = None
 
     async def _async_polling(self):
         """Manage the full Telegram application lifecycle without signal handlers."""
         await self.application.initialize()
         await self.application.start()
-        await self.application.updater.start_polling(
-            allowed_updates=self.Update.ALL_TYPES
-        )
+        await self.application.updater.start_polling(allowed_updates=self.Update.ALL_TYPES)
+        log.info("Telegram polling active")
         print("✅ Telegram polling active")
         while self.running:
             await asyncio.sleep(1)
@@ -98,47 +111,80 @@ class TelegramChannel(Channel):
 
     def send_message(self, chat_id: str, content: str, **kwargs):
         """Send a message to a Telegram chat."""
-        if not self.application:
+        if not self.application or not self._loop:
             return
 
+        async def _send():
+            await self.application.bot.send_message(chat_id=chat_id, text=content)
+
         try:
-            # Send message asynchronously
-            async def send():
-                await self.application.bot.send_message(chat_id=chat_id, text=content)
-
-            # Run in event loop
-            import asyncio
-
-            asyncio.run(send())
-
+            # Schedule into the existing polling event loop (thread-safe)
+            future = asyncio.run_coroutine_threadsafe(_send(), self._loop)
+            future.result(timeout=15)
         except Exception as e:
-            print(f"❌ Failed to send Telegram message: {e}")
+            log.error("Failed to send Telegram message to %s: %s", chat_id, e)
+
+    def _is_rate_limited(self, user_id: str) -> bool:
+        """Return True if this user has exceeded the rate limit."""
+        now = time.time()
+        with self._rate_lock:
+            timestamps = self._rate_timestamps.get(user_id, [])
+            # Drop timestamps outside the window
+            timestamps = [t for t in timestamps if now - t < _RATE_LIMIT_WINDOW]
+            if len(timestamps) >= _RATE_LIMIT_MESSAGES:
+                self._rate_timestamps[user_id] = timestamps
+                return True
+            timestamps.append(now)
+            self._rate_timestamps[user_id] = timestamps
+            return False
+
+    def _is_user_allowed(self, user_id: str) -> bool:
+        """Check if user is allowed to use the bot."""
+        if not self.allowed_users:
+            return True  # Empty = allow all (warn logged at startup)
+        return user_id in self.allowed_users
 
     async def _handle_start(self, update, context):
         """Handle /start command."""
         user = update.effective_user
-        chat_id = str(update.effective_chat.id)
-
         if self._is_user_allowed(str(user.id)):
-            welcome_msg = (
-                f"Hello {user.first_name}! I'm LTL, your local talking assistant. Send me a message to get started!"
+            await update.message.reply_text(
+                f"Hello {user.first_name}! I'm LTL, your local talking assistant. "
+                "Send me a message to get started!"
             )
-            await update.message.reply_text(welcome_msg)
         else:
+            log.warning("Unauthorized /start from user %s", user.id)
             await update.message.reply_text("Sorry, you're not authorized to use this bot.")
 
     async def _handle_message(self, update, context):
         """Handle incoming messages."""
         user = update.effective_user
         chat_id = str(update.effective_chat.id)
-        message_text = update.message.text
+        message_text = update.message.text or ""
 
-        # Check if user is allowed
+        # Authorization check
         if not self._is_user_allowed(str(user.id)):
+            log.warning("Unauthorized message from user %s", user.id)
             await update.message.reply_text("Sorry, you're not authorized to use this bot.")
             return
 
-        # Create inbound message
+        # Rate limiting
+        if self._is_rate_limited(str(user.id)):
+            log.warning("Rate limit hit for user %s", user.id)
+            await update.message.reply_text(
+                f"You're sending messages too fast. Limit: {_RATE_LIMIT_MESSAGES} per minute."
+            )
+            return
+
+        # Input length check
+        if len(message_text) > _MAX_MESSAGE_LENGTH:
+            await update.message.reply_text(
+                f"Message too long (max {_MAX_MESSAGE_LENGTH} characters)."
+            )
+            return
+
+        log.info("Message from user %s (len=%d)", user.id, len(message_text))
+
         inbound_msg = InboundMessage(
             channel="telegram",
             sender_id=str(user.id),
@@ -146,24 +192,11 @@ class TelegramChannel(Channel):
             content=message_text,
             session_key=f"telegram:{chat_id}",
             timestamp=time.time(),
-            metadata={
-                "username": user.username,
-                "first_name": user.first_name,
-                "last_name": user.last_name,
-            },
+            metadata={"username": user.username},  # only non-sensitive field
         )
 
-        # Publish to bus
         self.bus.publish_inbound(inbound_msg)
-
-        # Send typing indicator
         await context.bot.send_chat_action(chat_id=chat_id, action="typing")
-
-    def _is_user_allowed(self, user_id: str) -> bool:
-        """Check if user is allowed to use the bot."""
-        if not self.allowed_users:
-            return True  # Allow all if no restrictions
-        return user_id in self.allowed_users
 
 
 def create_telegram_channel(bus: MessageBus, config: dict) -> Optional[TelegramChannel]:
@@ -171,11 +204,12 @@ def create_telegram_channel(bus: MessageBus, config: dict) -> Optional[TelegramC
     if not config.get("enabled", False):
         return None
 
-    token = config.get("token", "")
+    # Prefer env var over config file for the token
+    token = os.environ.get("TELEGRAM_BOT_TOKEN") or config.get("token", "")
     allowed_users = config.get("allow_from", [])
 
     if not token:
-        print("⚠️ Telegram bot token not configured")
+        log.warning("Telegram bot token not configured")
         return None
 
     return TelegramChannel(bus, token, allowed_users)
