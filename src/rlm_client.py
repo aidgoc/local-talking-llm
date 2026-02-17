@@ -52,6 +52,9 @@ class RLMClient:
 
     def get_response(self, text: str, history: list[BaseMessage] | None = None) -> str:
         result = self._rlm.completion(self._build_prompt(text, history))
+        # max_depth=0 returns a plain str; max_depth>0 returns an object with .response
+        if isinstance(result, str):
+            return result.strip()
         return result.response.strip()
 
     @staticmethod

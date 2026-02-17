@@ -91,5 +91,5 @@ performance:
   enable_perf_monitor: true
 
 rlm:
-  max_depth: 1
+  max_depth: 0
   system_prompt: "You are a helpful AI assistant. Be concise, accurate, and friendly."
