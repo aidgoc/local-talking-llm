@@ -96,19 +96,32 @@ class TelegramChannel(Channel):
     def _run_polling(self):
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
-        try:
-            self._loop.run_until_complete(self._async_polling())
-        except Exception as e:
-            log.error("Telegram polling error: %s", e)
-            self.running = False
-        finally:
-            self._loop.close()
-            self._loop = None
+        retry = 0
+        while self.running:
+            try:
+                self._loop.run_until_complete(self._async_polling())
+                break  # clean exit
+            except Exception as e:
+                if "Conflict" in str(e):
+                    wait = min(30, 5 * (retry + 1))
+                    log.warning("Telegram conflict — another instance may be running. Retrying in %ds...", wait)
+                    time.sleep(wait)
+                    retry += 1
+                else:
+                    log.error("Telegram polling error: %s", e)
+                    self.running = False
+                    break
+        self._loop.close()
+        self._loop = None
 
     async def _async_polling(self):
         await self.application.initialize()
         await self.application.start()
-        await self.application.updater.start_polling(allowed_updates=self.Update.ALL_TYPES)
+        # drop_pending_updates=True clears stale sessions from previous runs
+        await self.application.updater.start_polling(
+            allowed_updates=self.Update.ALL_TYPES,
+            drop_pending_updates=True,
+        )
         log.info("Telegram polling active")
         print("✅ Telegram polling active")
         while self.running:
