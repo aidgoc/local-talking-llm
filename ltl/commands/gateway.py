@@ -43,8 +43,8 @@ def start_background(cfg: dict) -> list[str]:
         if ch:
             manager.register_channel(ch)
 
-    enabled = manager.get_enabled_channels()
-    if not enabled:
+    registered = list(manager.channels.keys())
+    if not registered:
         return []
 
     manager.start_all()
@@ -56,7 +56,7 @@ def start_background(cfg: dict) -> list[str]:
         pass
 
     threading.Thread(target=process_messages, args=(rlm_client,), daemon=True).start()
-    return enabled
+    return registered
 
 
 def run(args):
@@ -96,7 +96,7 @@ def run(args):
             manager.register_channel(discord_channel)
 
     # Start all channels
-    enabled_channels = manager.get_enabled_channels()
+    enabled_channels = list(manager.channels.keys())
     if not enabled_channels:
         print("⚠️ No channels enabled. Configure channels in ~/.ltl/config.json")
         print("\nExample configuration:")

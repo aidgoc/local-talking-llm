@@ -85,9 +85,14 @@ class MessageBus:
                     try:
                         while not queue.empty():
                             msg = queue.get_nowait()
-                            # Here we would send to actual channel
-                            # For now, just log
-                            print(f"[BUS] Outbound to {channel}:{msg.chat_id}: {msg.content[:50]}...")
+                            handlers = getattr(self, "_channel_handlers", {})
+                            if channel in handlers:
+                                try:
+                                    handlers[channel](msg)
+                                except Exception as he:
+                                    print(f"[BUS] Handler error for {channel}: {he}")
+                            else:
+                                print(f"[BUS] Outbound to {channel}:{msg.chat_id}: {msg.content[:50]}...")
                     except Exception as e:
                         print(f"[BUS] Error processing outbound for {channel}: {e}")
 
@@ -120,8 +125,8 @@ class MessageBus:
 
     def register_channel_handler(self, channel: str, handler: Callable[[OutboundMessage], None]):
         """Register a handler for outbound messages to a specific channel."""
-        # For now, we'll implement this when we add actual channel integrations
-        pass
+        self._channel_handlers = getattr(self, "_channel_handlers", {})
+        self._channel_handlers[channel] = handler
 
     def get_channel_queue(self, channel: str) -> Queue:
         """Get the outbound queue for a channel."""

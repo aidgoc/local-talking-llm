@@ -3,6 +3,7 @@
 Uses python-telegram-bot library (open source, free).
 """
 
+import asyncio
 import os
 import sys
 import threading
@@ -49,7 +50,11 @@ class TelegramChannel(Channel):
         self.application.add_handler(CommandHandler("start", self._handle_start))
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
 
-        # Start polling in a separate thread
+        # Register outbound handler so the bus delivers replies back to Telegram
+        self.bus.register_channel_handler("telegram", self._deliver_outbound)
+
+        # Start polling in a separate thread with its own event loop
+        # (avoids set_wakeup_fd restriction that only works on the main thread)
         self.running = True
         self.thread = threading.Thread(target=self._run_polling, daemon=True)
         self.thread.start()
@@ -59,21 +64,37 @@ class TelegramChannel(Channel):
     def stop(self):
         """Stop the Telegram bot."""
         self.running = False
-        if self.application:
-            try:
-                # Stop the application
-                self.application.stop()
-                print("✅ Telegram bot stopped")
-            except Exception as e:
-                print(f"⚠️ Error stopping Telegram bot: {e}")
+        print("✅ Telegram bot stopped")
 
     def _run_polling(self):
-        """Run the polling loop."""
+        """Run the polling loop in its own asyncio event loop."""
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
         try:
-            self.application.run_polling(allowed_updates=self.Update.ALL_TYPES)
+            loop.run_until_complete(self._async_polling())
         except Exception as e:
             print(f"❌ Telegram polling error: {e}")
             self.running = False
+        finally:
+            loop.close()
+
+    async def _async_polling(self):
+        """Manage the full Telegram application lifecycle without signal handlers."""
+        await self.application.initialize()
+        await self.application.start()
+        await self.application.updater.start_polling(
+            allowed_updates=self.Update.ALL_TYPES
+        )
+        print("✅ Telegram polling active")
+        while self.running:
+            await asyncio.sleep(1)
+        await self.application.updater.stop()
+        await self.application.stop()
+        await self.application.shutdown()
+
+    def _deliver_outbound(self, msg):
+        """Called by the bus to deliver an outbound message back to Telegram."""
+        self.send_message(msg.chat_id, msg.content)
 
     def send_message(self, chat_id: str, content: str, **kwargs):
         """Send a message to a Telegram chat."""
@@ -124,6 +145,7 @@ class TelegramChannel(Channel):
             chat_id=chat_id,
             content=message_text,
             session_key=f"telegram:{chat_id}",
+            timestamp=time.time(),
             metadata={
                 "username": user.username,
                 "first_name": user.first_name,
