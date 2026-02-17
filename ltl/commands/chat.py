@@ -1,6 +1,7 @@
 """Chat command - Text-based chat with the assistant."""
 
 import os
+import re
 import sys
 from typing import Optional
 
@@ -17,12 +18,26 @@ try:
 except ImportError:
     LANGCHAIN_AVAILABLE = False
 
+try:
+    from src.web_search import WebSearch
+    SEARCH_AVAILABLE = True
+except ImportError:
+    SEARCH_AVAILABLE = False
+
+# Phrases that signal a web-search intent
+_SEARCH_RE = re.compile(
+    r"^(search( for)?|look up|find( out)?|google|what is|who is|"
+    r"when (is|was|did)|where is|how (do|does|can|to)|latest|news about)\b",
+    re.IGNORECASE,
+)
+
 
 class TextChatAssistant:
     """Text-based chat assistant using Ollama."""
 
-    def __init__(self, config: dict):
+    def __init__(self, config: dict, search_engine=None):
         self.config = config
+        self.search_engine = search_engine
         self.chat_history = []  # Simple list for history
 
         # Initialize Ollama config
@@ -57,19 +72,33 @@ class TextChatAssistant:
             # Fallback to direct Ollama API calls
             self.use_direct_api = True
 
+    def _maybe_inject_search(self, message: str) -> str:
+        """If message looks like a search query, prepend web results and return enriched prompt."""
+        if not self.search_engine or not _SEARCH_RE.match(message):
+            return message
+        print("🔍 Searching...", flush=True)
+        results = self.search_engine.search_and_format(message, max_results=4)
+        if not results or results == "No search results found.":
+            return message
+        return (
+            f"{message}\n\n"
+            f"[Web search results for context:]\n{results}"
+        )
+
     def chat(self, message: str) -> str:
         """Send a message and get response."""
+        enriched = self._maybe_inject_search(message)
         if LANGCHAIN_AVAILABLE:
             try:
                 response = self.chain.invoke(
-                    {"input": message}, config={"configurable": {"session_id": "ltl-cli-chat"}}
+                    {"input": enriched}, config={"configurable": {"session_id": "ltl-cli-chat"}}
                 )
                 return str(response)
             except Exception as e:
                 return f"Sorry, I encountered an error: {e}"
         else:
             # Direct API fallback
-            return self._chat_direct(message)
+            return self._chat_direct(enriched)
 
     def _chat_direct(self, message: str) -> str:
         """Direct Ollama API chat without langchain."""
@@ -145,9 +174,19 @@ def run(args):
         print("Or start it with: systemctl start ollama")
         return
 
+    # Web search (optional)
+    search_engine = None
+    no_search = getattr(args, "no_search", False)
+    if SEARCH_AVAILABLE and not no_search:
+        try:
+            search_engine = WebSearch(config.get("search", {}))
+            print("🔍 DuckDuckGo search enabled")
+        except Exception as e:
+            print(f"⚠️  Search unavailable: {e}")
+
     # Initialize chat assistant
     try:
-        assistant = TextChatAssistant(config)
+        assistant = TextChatAssistant(config, search_engine=search_engine)
     except Exception as e:
         print(f"❌ Failed to initialize chat assistant: {e}")
         return
@@ -163,6 +202,8 @@ def run(args):
         print("🎙️  LTL Text Chat Mode")
         print("   Type 'exit', 'quit', or 'bye' to stop")
         print("   Type 'clear' to clear chat history")
+        if search_engine:
+            print("   Search: start with 'search for', 'what is', 'look up', etc.")
         print()
 
         while True:

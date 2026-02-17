@@ -11,7 +11,7 @@ import os
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ltl.commands import init, status, chat, cron, tool, gateway, setup, tui
+from ltl.commands import init, status, chat, cron, tool, gateway, setup, tui, voice
 import ltl.commands.config_wizard as config_wizard
 from ltl.core.workspace import get_workspace_path
 from ltl.core.config import load_config
@@ -26,8 +26,9 @@ def main():
 Examples:
   ltl init              Initialize workspace and configuration
   ltl status            Show system status
-  ltl chat              Start interactive chat mode
+  ltl chat              Start interactive chat mode (with web search)
   ltl chat -m "Hello"   Send single message
+  ltl voice             Start voice assistant (Whisper + LLM + TTS + search)
   ltl cron list         List scheduled tasks
   ltl config show       Show current configuration
         """,
@@ -48,7 +49,17 @@ Examples:
     chat_parser = subparsers.add_parser("chat", help="Chat with the assistant")
     chat_parser.add_argument("-m", "--message", help="Send a single message")
     chat_parser.add_argument("--backend", choices=["ollama", "openrouter", "auto"], help="Override backend")
+    chat_parser.add_argument("--no-search", action="store_true", help="Disable web search")
     chat_parser.set_defaults(func=chat.run)
+
+    # Voice command
+    voice_parser = subparsers.add_parser("voice", help="Start voice assistant (Whisper + LLM + TTS)")
+    voice_parser.add_argument("--no-search", action="store_true", help="Disable web search")
+    voice_parser.add_argument("--no-vision", action="store_true", help="Disable camera/vision")
+    voice_parser.add_argument("--model", help="Override text model")
+    voice_parser.add_argument("--whisper-model", choices=["tiny.en", "base.en", "small.en"], help="Whisper model size")
+    voice_parser.add_argument("--backend", choices=["ollama", "openrouter", "auto"], help="Override backend")
+    voice_parser.set_defaults(func=voice.run)
 
     # Cron command
     cron_parser = subparsers.add_parser("cron", help="Manage scheduled tasks")
