@@ -227,14 +227,55 @@ class ToolExecutor:
         ),
     ]
 
+    # Patterns that extract a query param for recall_memory (avoids LLM call)
+    _RECALL_PATTERNS = [
+        re.compile(r"(?:what(?:'s| is) my )(.*)", re.IGNORECASE),
+        re.compile(r"(?:tell me my )(.*)", re.IGNORECASE),
+        re.compile(r"(?:do you (?:know|remember) my )(.*)", re.IGNORECASE),
+        re.compile(r"(?:what did i (?:say|tell you) (?:about|regarding) )(.*)", re.IGNORECASE),
+    ]
+
+    # Patterns that extract key+value for save_memory
+    _SAVE_PATTERNS = [
+        re.compile(r"(?:(?:save|store)(?: to| in)? memory[:\s]+)(.*)", re.IGNORECASE),
+        re.compile(r"(?:remember (?:that )?my )(\w[\w\s]*?) (?:is|are) (.+)", re.IGNORECASE),
+        re.compile(r"(?:my )(\w[\w\s]*?) (?:is|are) (.+)", re.IGNORECASE),
+    ]
+
     def _fast_path(self, user_text: str) -> dict | None:
         """Return a tool call dict if the text matches a simple keyword route."""
         lower = user_text.lower().strip()
+
+        # Static keyword routes (no param extraction)
         for keywords, tool, params in self._FAST_ROUTES:
             for kw in keywords:
                 if kw in lower:
                     console.print(f"[dim]Fast-path: {tool} (matched '{kw}')[/dim]")
                     return {"tool": tool, "params": params}
+
+        # Dynamic recall_memory patterns: "what is my X" → recall_memory(query=X)
+        for pat in self._RECALL_PATTERNS:
+            m = pat.search(user_text)
+            if m:
+                query = m.group(1).strip().rstrip("?. ")
+                if query:
+                    console.print(f"[dim]Fast-path: recall_memory (matched '{pat.pattern[:30]}')[/dim]")
+                    return {"tool": "recall_memory", "params": {"query": query}}
+
+        # Dynamic save_memory patterns: "remember my X is Y"
+        for pat in self._SAVE_PATTERNS:
+            m = pat.search(user_text)
+            if m:
+                groups = m.groups()
+                if len(groups) == 2:
+                    key = groups[0].strip().replace(" ", "_")
+                    value = groups[1].strip()
+                    console.print(f"[dim]Fast-path: save_memory (matched '{pat.pattern[:30]}')[/dim]")
+                    return {"tool": "save_memory", "params": {"key": key, "value": value, "category": "personal"}}
+                elif len(groups) == 1:
+                    # "save to memory: X" — needs LLM to split key/value, fall through
+                    pass
+
         return None
 
     def _extract_tool_call(self, user_text: str) -> dict:

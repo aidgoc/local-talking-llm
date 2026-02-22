@@ -323,9 +323,15 @@ class TelegramChannel(Channel):
             return
 
         if not context.args:
-            current = self._config.get("providers", {}).get("ollama", {}).get("text_model", "unknown")
+            backend = self._config.get("backend", "ollama")
+            if backend == "openrouter":
+                current = self._config.get("providers", {}).get("openrouter", {}).get("text_model", "unknown")
+                label = f"{current} (OpenRouter)"
+            else:
+                current = self._config.get("providers", {}).get("ollama", {}).get("text_model", "unknown")
+                label = f"{current} (Ollama local)"
             await update.message.reply_text(
-                f"Current model: {current}\n\n"
+                f"Current model: {label}\n\n"
                 "Usage:\n"
                 "  /model list          — list available models\n"
                 "  /model <name>        — switch to a model"
