@@ -52,13 +52,18 @@ def start_background(cfg: dict) -> list[str]:
 
     manager.start_all()
 
-    rlm_client = None
+    rlm_holder: dict = {"client": None}
     try:
-        rlm_client = RLMClient(cfg)
+        rlm_holder["client"] = RLMClient(cfg)
     except Exception:
         pass
 
-    threading.Thread(target=process_messages, args=(rlm_client,), daemon=True).start()
+    # Give the telegram channel access to rlm_holder so /model can hot-swap the client
+    for ch in manager.channels.values():
+        ch._config = cfg
+        ch._rlm_holder = rlm_holder
+
+    threading.Thread(target=process_messages, args=(rlm_holder,), daemon=True).start()
     return registered
 
 
@@ -128,15 +133,20 @@ def run(args):
     manager.start_all()
 
     # Init RLM client for responding to messages
-    rlm_client = None
+    rlm_holder: dict = {"client": None}
     try:
-        rlm_client = RLMClient(cfg)
+        rlm_holder["client"] = RLMClient(cfg)
         print("✓ RLMClient ready")
     except Exception as e:
         print(f"⚠️  RLMClient unavailable ({e}) — falling back to echo")
 
+    # Give channels access to rlm_holder so /model can hot-swap the client
+    for ch in manager.channels.values():
+        ch._config = cfg
+        ch._rlm_holder = rlm_holder
+
     # Start message processing thread
-    processing_thread = threading.Thread(target=process_messages, args=(rlm_client,), daemon=True)
+    processing_thread = threading.Thread(target=process_messages, args=(rlm_holder,), daemon=True)
     processing_thread.start()
 
     print("\n✅ Gateway started! Press Ctrl+C to stop")
@@ -155,8 +165,12 @@ def run(args):
     print("✅ Gateway stopped")
 
 
-def process_messages(rlm_client):
-    """Process inbound messages and route to assistant."""
+def process_messages(rlm_holder: dict):
+    """Process inbound messages and route to assistant.
+
+    Args:
+        rlm_holder: {"client": RLMClient | None} — mutable so /model can hot-swap the client.
+    """
     bus = get_bus()
 
     while True:
@@ -168,7 +182,7 @@ def process_messages(rlm_client):
 
             print(f"📨 [{msg.channel}] {msg.sender_id}: {msg.content[:50]}...")
 
-            # Route to RLM assistant, fall back to generic message on error
+            rlm_client = rlm_holder.get("client")
             if rlm_client:
                 try:
                     response = rlm_client.get_response(msg.content)

@@ -30,7 +30,8 @@ _OLLAMA_URL = "http://localhost:11434"
 class TelegramChannel(Channel):
     """Telegram bot channel for LTL."""
 
-    def __init__(self, bus: MessageBus, token: str, allowed_users: List[str] = None):
+    def __init__(self, bus: MessageBus, token: str, allowed_users: List[str] = None,
+                 config: dict = None, rlm_holder: dict = None):
         super().__init__("telegram", bus)
         self.token = token
         self.allowed_users = allowed_users or []
@@ -38,6 +39,8 @@ class TelegramChannel(Channel):
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._rate_timestamps: dict[str, list[float]] = {}
         self._rate_lock = threading.Lock()
+        self._config = config or {}
+        self._rlm_holder = rlm_holder  # {"client": RLMClient} — updated on /model switch
 
         if not self.allowed_users:
             log.warning(
@@ -75,6 +78,7 @@ class TelegramChannel(Channel):
         self.application.add_handler(CommandHandler("status", self._handle_status))
         self.application.add_handler(CommandHandler("search", self._handle_search))
         self.application.add_handler(CommandHandler("memory", self._handle_memory))
+        self.application.add_handler(CommandHandler("model",  self._handle_model))
 
         # Regular text messages → LLM
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
@@ -212,6 +216,7 @@ class TelegramChannel(Channel):
             "  /status   — 🛡 System health\n"
             "  /search   — 🔍 Web search  (e.g. /search python tips)\n"
             "  /memory   — 🧠 Search history  (e.g. /memory meeting)\n"
+            "  /model    — 🤖 Show or switch model  (e.g. /model list, /model gemma3)\n"
             "  /help     — Show this message\n\n"
             "Or just send any message to chat with the AI."
         )
@@ -307,6 +312,96 @@ class TelegramChannel(Channel):
         except Exception as e:
             log.error("Vision description failed: %s", e)
             return "Vision model unavailable."
+
+    # ------------------------------------------------------------------
+    # /model  — show or switch the active text model
+    # ------------------------------------------------------------------
+
+    async def _handle_model(self, update, context):
+        if not self._auth_check(str(update.effective_user.id)):
+            await update.message.reply_text("Not authorized.")
+            return
+
+        if not context.args:
+            current = self._config.get("providers", {}).get("ollama", {}).get("text_model", "unknown")
+            await update.message.reply_text(
+                f"Current model: {current}\n\n"
+                "Usage:\n"
+                "  /model list          — list available models\n"
+                "  /model <name>        — switch to a model"
+            )
+            return
+
+        if context.args[0] == "list":
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, self._list_models)
+            await update.message.reply_text(result)
+            return
+
+        new_model = context.args[0]
+        await update.message.reply_text(f"Switching to {new_model}…")
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, self._switch_model, new_model)
+        await update.message.reply_text(result)
+
+    def _list_models(self) -> str:
+        import requests
+        try:
+            r = requests.get(f"{_OLLAMA_URL}/api/tags", timeout=5)
+            models = [m["name"] for m in r.json().get("models", [])]
+            if not models:
+                return "No models found in Ollama."
+            current = self._config.get("providers", {}).get("ollama", {}).get("text_model", "")
+            lines = ["Available models:"]
+            for m in models:
+                marker = " ◀ active" if m == current else ""
+                lines.append(f"  • {m}{marker}")
+            return "\n".join(lines)
+        except Exception as e:
+            return f"Could not fetch models: {e}"
+
+    def _switch_model(self, model_name: str) -> str:
+        import json
+        import requests
+        from ltl.core.config import CONFIG_PATH, load_config, save_config, get_default_config
+
+        # Validate against Ollama
+        try:
+            r = requests.get(f"{_OLLAMA_URL}/api/tags", timeout=5)
+            available = [m["name"] for m in r.json().get("models", [])]
+            # Allow short names: "qwen2.5" matches "qwen2.5:3b"
+            matched = next(
+                (m for m in available if m == model_name or m.startswith(model_name + ":")),
+                None,
+            )
+            if not matched:
+                return (
+                    f"❌ Model '{model_name}' not found in Ollama.\n"
+                    f"Use /model list to see available models."
+                )
+            model_name = matched
+        except Exception:
+            pass  # Ollama offline — save anyway, validate on next use
+
+        # Save to raw config.json (avoid persisting .env API keys back into the file)
+        if os.path.exists(CONFIG_PATH):
+            with open(CONFIG_PATH) as f:
+                raw = json.load(f)
+        else:
+            raw = get_default_config()
+        raw.setdefault("providers", {}).setdefault("ollama", {})["text_model"] = model_name
+        save_config(raw)
+        self._config = load_config()  # re-merge with .env
+
+        # Hot-swap the running RLM client
+        if self._rlm_holder is not None:
+            try:
+                from src.rlm_client import RLMClient
+                self._rlm_holder["client"] = RLMClient(self._config)
+            except Exception as e:
+                return f"✅ Switched to {model_name} (saved), but live reload failed: {e}"
+
+        return f"✅ Switched to model: {model_name}"
 
     # ------------------------------------------------------------------
     # /status  — system health
