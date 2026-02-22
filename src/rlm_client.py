@@ -63,7 +63,7 @@ class RLMClient:
         if not history:
             return text
         lines = []
-        for m in history[-10:]:   # cap to avoid token blow-up
+        for m in history[-6:]:   # cap to avoid token blow-up
             role = "User" if isinstance(m, HumanMessage) else "Assistant"
             lines.append(f"{role}: {m.content}")
         return "[Previous conversation]\n" + "\n".join(lines) + "\n[End]\n\nUser: " + text

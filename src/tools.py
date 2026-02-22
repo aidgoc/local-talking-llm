@@ -78,23 +78,23 @@ for name, info in TOOL_DEFINITIONS.items():
     _TOOL_DESC_LINES.append(f"- {name}: {info['description']}. Parameters: {param_str}")
 TOOL_DESCRIPTIONS_TEXT = "\n".join(_TOOL_DESC_LINES)
 
-TOOL_EXTRACTION_PROMPT = f"""\
-You are a tool-calling assistant. Based on the user's message, select the best tool and extract its parameters.
+TOOL_EXTRACTION_PROMPT = """\
+Output JSON only. Pick the best tool from the list below.
 
-Available tools:
-{TOOL_DESCRIPTIONS_TEXT}
+Tools:
+save_memory(key, value, category)   - save a fact or preference; key=short_id e.g. user_city
+recall_memory(query)                - retrieve a saved memory; query=search keyword
+list_memories(category?)            - list all memories
+delete_memory(key)                  - forget a memory
+create_task(title, description?, priority?) - add a todo; priority=low|normal|high
+list_tasks()                        - show pending tasks
+complete_task(title)                - mark a task done
+get_time()                          - current date and time
+get_location()                      - user location
 
-Respond with ONLY a JSON object:
-{{"tool": "<tool_name>", "params": {{"param1": "value1", ...}}}}
-
-If no parameters are needed, use an empty object: {{"tool": "list_tasks", "params": {{}}}}
-
-Rules:
-- Pick exactly ONE tool
-- Extract parameter values from the user's message
-- For save_memory, create a concise key from the subject (e.g., "user_birthday", "meeting_friday")
-- For recall_memory, use the most relevant search keyword
-- Output ONLY the JSON object, nothing else"""
+JSON format: {"tool": "tool_name", "params": {"key": "value"}}
+No params:   {"tool": "get_time", "params": {}}
+Output ONLY the JSON object."""
 
 
 class ToolExecutor:
@@ -107,7 +107,7 @@ class ToolExecutor:
         self.db = db
         self.config = config
 
-        ollama_cfg = config.get("ollama", {})
+        ollama_cfg = config.get("ollama") or config.get("providers", {}).get("ollama", {})
         self.ollama_base_url = ollama_cfg.get("base_url", "http://localhost:11434")
         self.orchestrator_model = ollama_cfg.get("orchestrator_model", "gemma3")
         self.orchestrator_num_gpu = ollama_cfg.get("orchestrator_num_gpu", 0)
@@ -259,6 +259,7 @@ class ToolExecutor:
                     "num_gpu": self.orchestrator_num_gpu,
                     "temperature": 0.1,
                     "num_predict": 150,
+                    "num_ctx": 1024,   # small window is sufficient; reduces KV-cache cost
                 },
             },
             timeout=60,

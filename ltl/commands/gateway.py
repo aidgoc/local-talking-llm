@@ -69,12 +69,17 @@ def _route_message(text: str, rlm_holder: dict, components: dict) -> str:
     if intent_type == "search" and web_search:
         try:
             query = intent.get("search_query") or text
-            results = web_search.search_and_format(query, max_results=4)
+            results = web_search.search_and_format(query, max_results=3)
             if rlm_client and results != "No search results found.":
+                # Trim each snippet to 200 chars to keep the prompt short
+                trimmed = "\n\n".join(
+                    line if not line.startswith("    Snippet:") else
+                    "    Snippet: " + line[12:212]
+                    for line in results.splitlines()
+                )
                 prompt = (
-                    f"Question: {text}\n\n"
-                    f"Web search results:\n{results}\n\n"
-                    "Answer concisely based on the results above:"
+                    f"Q: {text}\n\nSearch results:\n{trimmed}\n\n"
+                    "Answer in 1-3 sentences:"
                 )
                 return rlm_client.get_response(prompt)
             return results
