@@ -346,51 +346,91 @@ class TelegramChannel(Channel):
 
     def _list_models(self) -> str:
         import requests
+        backend = self._config.get("backend", "ollama")
+        lines = [f"Backend: {backend}\n"]
+
+        # Local Ollama models
         try:
             r = requests.get(f"{_OLLAMA_URL}/api/tags", timeout=5)
-            models = [m["name"] for m in r.json().get("models", [])]
-            if not models:
-                return "No models found in Ollama."
-            current = self._config.get("providers", {}).get("ollama", {}).get("text_model", "")
-            lines = ["Available models:"]
-            for m in models:
-                marker = " ◀ active" if m == current else ""
+            ollama_models = [m["name"] for m in r.json().get("models", [])]
+        except Exception:
+            ollama_models = []
+
+        active_ollama = self._config.get("providers", {}).get("ollama", {}).get("text_model", "")
+        active_or = self._config.get("providers", {}).get("openrouter", {}).get("text_model", "")
+
+        if ollama_models:
+            lines.append("Local (Ollama):")
+            for m in ollama_models:
+                marker = " ◀ active" if (backend in ("ollama", "auto") and m == active_ollama) else ""
                 lines.append(f"  • {m}{marker}")
-            return "\n".join(lines)
-        except Exception as e:
-            return f"Could not fetch models: {e}"
+        else:
+            lines.append("Local (Ollama): offline or no models")
+
+        lines.append("\nOpenRouter (cloud):")
+        or_key = self._config.get("providers", {}).get("openrouter", {}).get("api_key", "")
+        if or_key:
+            if active_or:
+                marker = " ◀ active" if backend == "openrouter" else ""
+                lines.append(f"  • {active_or}{marker}")
+            lines.append("  Tip: /model <org/model-name> to switch")
+            lines.append("  e.g. /model meta-llama/llama-3.3-70b-instruct:free")
+            lines.append("  e.g. /model anthropic/claude-3.5-haiku")
+        else:
+            lines.append("  ❌ No OpenRouter API key set")
+
+        return "\n".join(lines)
 
     def _switch_model(self, model_name: str) -> str:
         import json
         import requests
         from ltl.core.config import CONFIG_PATH, load_config, save_config, get_default_config
 
-        # Validate against Ollama
-        try:
-            r = requests.get(f"{_OLLAMA_URL}/api/tags", timeout=5)
-            available = [m["name"] for m in r.json().get("models", [])]
-            # Allow short names: "qwen2.5" matches "qwen2.5:3b"
-            matched = next(
-                (m for m in available if m == model_name or m.startswith(model_name + ":")),
-                None,
-            )
-            if not matched:
-                return (
-                    f"❌ Model '{model_name}' not found in Ollama.\n"
-                    f"Use /model list to see available models."
-                )
-            model_name = matched
-        except Exception:
-            pass  # Ollama offline — save anyway, validate on next use
+        is_openrouter = "/" in model_name
 
-        # Save to raw config.json (avoid persisting .env API keys back into the file)
-        if os.path.exists(CONFIG_PATH):
-            with open(CONFIG_PATH) as f:
-                raw = json.load(f)
+        if is_openrouter:
+            # Validate API key exists
+            or_key = self._config.get("providers", {}).get("openrouter", {}).get("api_key", "")
+            if not or_key:
+                return "❌ OpenRouter API key not set. Add OPENROUTER_API_KEY to ~/.ltl/.env"
+
+            if os.path.exists(CONFIG_PATH):
+                with open(CONFIG_PATH) as f:
+                    raw = json.load(f)
+            else:
+                raw = get_default_config()
+            raw["backend"] = "openrouter"
+            raw.setdefault("providers", {}).setdefault("openrouter", {})["text_model"] = model_name
+            save_config(raw)
+
         else:
-            raw = get_default_config()
-        raw.setdefault("providers", {}).setdefault("ollama", {})["text_model"] = model_name
-        save_config(raw)
+            # Validate against Ollama; allow short names like "qwen2.5" → "qwen2.5:3b"
+            try:
+                r = requests.get(f"{_OLLAMA_URL}/api/tags", timeout=5)
+                available = [m["name"] for m in r.json().get("models", [])]
+                matched = next(
+                    (m for m in available if m == model_name or m.startswith(model_name + ":")),
+                    None,
+                )
+                if not matched:
+                    return (
+                        f"❌ '{model_name}' not found in Ollama.\n"
+                        f"Use /model list to see available models.\n"
+                        f"For OpenRouter, use: /model org/model-name"
+                    )
+                model_name = matched
+            except Exception:
+                pass  # Ollama offline — save anyway
+
+            if os.path.exists(CONFIG_PATH):
+                with open(CONFIG_PATH) as f:
+                    raw = json.load(f)
+            else:
+                raw = get_default_config()
+            raw["backend"] = "ollama"
+            raw.setdefault("providers", {}).setdefault("ollama", {})["text_model"] = model_name
+            save_config(raw)
+
         self._config = load_config()  # re-merge with .env
 
         # Hot-swap the running RLM client
@@ -401,7 +441,8 @@ class TelegramChannel(Channel):
             except Exception as e:
                 return f"✅ Switched to {model_name} (saved), but live reload failed: {e}"
 
-        return f"✅ Switched to model: {model_name}"
+        backend_label = "OpenRouter" if is_openrouter else "Ollama"
+        return f"✅ Switched to {backend_label} model: {model_name}"
 
     # ------------------------------------------------------------------
     # /status  — system health

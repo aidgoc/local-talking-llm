@@ -38,7 +38,8 @@ class RLMClient:
                 custom_system_prompt=system_prompt,
             )
         else:  # openrouter
-            or_cfg = config.get("openrouter", {})
+            # Support both top-level "openrouter" key and "providers.openrouter"
+            or_cfg = config.get("openrouter") or config.get("providers", {}).get("openrouter", {})
             self._rlm = RLM(
                 backend="openrouter",
                 backend_kwargs={
