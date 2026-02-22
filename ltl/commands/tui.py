@@ -131,10 +131,6 @@ except Exception as e:
         except Exception as e:
             print(f"TTS check failed: {e}")
             return False
-        except Exception:
-            return False
-        except Exception:
-            return False
 
     def show_welcome(self):
         """Show welcome screen."""

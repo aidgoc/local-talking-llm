@@ -52,8 +52,9 @@ class TextChatAssistant:
         if LANGCHAIN_AVAILABLE:
             # Use persistent history (falls back to in-memory on failure)
             hist_cfg = config.get("history", {})
-            ollama_base = config.get("ollama", {}).get("base_url", "http://localhost:11434")
-            ollama_model = config.get("ollama", {}).get("text_model", "qwen2.5:3b")
+            ollama_cfg = config.get("providers", {}).get("ollama", {})
+            ollama_base = ollama_cfg.get("base_url", "http://localhost:11434")
+            ollama_model = ollama_cfg.get("text_model", "qwen2.5:3b")
             try:
                 self.chat_history = PersistentHistory(
                     db_path=hist_cfg.get("db_path", "~/.local/share/talking-llm/chat_history.db"),

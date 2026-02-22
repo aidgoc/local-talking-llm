@@ -66,11 +66,12 @@ def load_config():
 
 
 def save_config(config):
-    """Save configuration to file."""
+    """Save configuration to file (owner-only permissions)."""
     os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
 
     with open(CONFIG_PATH, "w") as f:
         json.dump(config, f, indent=2)
+    os.chmod(CONFIG_PATH, 0o600)
 
 
 def create_default_config():
