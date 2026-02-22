@@ -7,6 +7,46 @@ from pathlib import Path
 
 LTL_DIR = os.path.expanduser("~/.ltl")
 CONFIG_PATH = os.path.join(LTL_DIR, "config.json")
+ENV_PATH = os.path.join(LTL_DIR, ".env")
+
+# Mapping of .env variable names to config paths
+_ENV_MAP = {
+    "OPENROUTER_API_KEY": ("providers", "openrouter", "api_key"),
+    "ANTHROPIC_API_KEY":  ("providers", "anthropic", "api_key"),
+    "OPENAI_API_KEY":     ("providers", "openai", "api_key"),
+    "GROQ_API_KEY":       ("providers", "groq", "api_key"),
+    "TELEGRAM_BOT_TOKEN": ("channels", "telegram", "token"),
+}
+
+
+def _load_env_overrides(config: dict) -> dict:
+    """Load API keys from ~/.ltl/.env and overlay onto config."""
+    env_vars = {}
+
+    # Load from .env file if it exists
+    if os.path.exists(ENV_PATH):
+        with open(ENV_PATH) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, _, val = line.partition("=")
+                    env_vars[key.strip()] = val.strip().strip('"').strip("'")
+
+    # Also check actual environment variables (these take priority)
+    for key in _ENV_MAP:
+        if key in os.environ:
+            env_vars[key] = os.environ[key]
+
+    # Apply to config
+    for env_key, path in _ENV_MAP.items():
+        val = env_vars.get(env_key)
+        if val:
+            node = config
+            for part in path[:-1]:
+                node = node.setdefault(part, {})
+            node[path[-1]] = val
+
+    return config
 
 
 def get_config_path():
@@ -15,12 +55,14 @@ def get_config_path():
 
 
 def load_config():
-    """Load configuration from file."""
+    """Load configuration from file, overlaying keys from ~/.ltl/.env."""
     if not os.path.exists(CONFIG_PATH):
-        return get_default_config()
+        config = get_default_config()
+    else:
+        with open(CONFIG_PATH, "r") as f:
+            config = json.load(f)
 
-    with open(CONFIG_PATH, "r") as f:
-        return json.load(f)
+    return _load_env_overrides(config)
 
 
 def save_config(config):

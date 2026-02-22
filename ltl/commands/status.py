@@ -20,7 +20,11 @@ def run(args):
         print(f"✓ Config: {config_path}")
         try:
             cfg = load_config()
-            print(f"  Model: {cfg.get('model', 'Not set')}")
+            model = (
+                cfg.get("providers", {}).get("ollama", {}).get("text_model")
+                or cfg.get("agents", {}).get("defaults", {}).get("model", "Not set")
+            )
+            print(f"  Model: {model}")
             print(f"  Backend: {cfg.get('backend', 'ollama')}")
         except Exception as e:
             print(f"  ⚠️  Error loading config: {e}")

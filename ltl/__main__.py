@@ -7,6 +7,10 @@ A PicoClaw-inspired CLI for the Local Talking LLM assistant.
 import argparse
 import sys
 import os
+import warnings
+
+# Suppress pydantic v1 incompatibility warning on Python 3.14+
+warnings.filterwarnings("ignore", message="Core Pydantic V1 functionality", category=UserWarning)
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
